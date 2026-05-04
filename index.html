@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AuditConsultores ATE</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  :root{--navy:#0A1628;--teal:#00C9A7;--teal2:#00A88E;--light:#F4F7FB;--gray:#6B7A8D;--white:#fff;}
+  html{scroll-behavior:smooth;}
+  body{font-family:'Segoe UI',sans-serif;background:var(--white);color:var(--navy);}
+
+  nav{position:fixed;top:0;width:100%;z-index:100;background:rgba(10,22,40,0.97);backdrop-filter:blur(8px);display:flex;justify-content:space-between;align-items:center;padding:1rem 6%;}
+  .logo{font-size:1.4rem;font-weight:800;color:var(--white);letter-spacing:1px;cursor:pointer;}
+  .logo span.name{color:var(--teal);}
+  .ate-badge{background:var(--teal);color:var(--navy);font-size:.7rem;font-weight:800;padding:.2rem .6rem;border-radius:20px;margin-left:.5rem;letter-spacing:1px;}
+  .nav-links{display:flex;gap:2rem;list-style:none;}
+  .nav-links a{color:rgba(255,255,255,0.8);text-decoration:none;font-size:.9rem;font-weight:500;transition:.3s;cursor:pointer;}
+  .nav-links a:hover{color:var(--teal);}
+
+  #inicio{min-height:100vh;background:linear-gradient(135deg,var(--navy) 0%,#0D2444 60%,#0A3D3A 100%);display:flex;align-items:center;padding:0 6%;position:relative;overflow:hidden;}
+  .hero-content{max-width:620px;z-index:2;}
+  .hero-tag{display:inline-block;background:rgba(0,201,167,.15);border:1px solid var(--teal);color:var(--teal);font-size:.8rem;font-weight:700;padding:.35rem 1rem;border-radius:20px;margin-bottom:1.5rem;letter-spacing:2px;}
+  .hero-content h1{font-size:3.2rem;font-weight:900;color:var(--white);line-height:1.15;margin-bottom:1.2rem;}
+  .hero-content h1 em{font-style:normal;color:var(--teal);}
+  .hero-content p{color:rgba(255,255,255,.7);font-size:1.1rem;line-height:1.8;margin-bottom:2rem;}
+  .hero-btns{display:flex;gap:1rem;flex-wrap:wrap;}
+  .btn-primary{background:var(--teal);color:var(--navy);padding:.85rem 2rem;border-radius:50px;font-weight:700;font-size:.95rem;transition:.3s;cursor:pointer;border:none;}
+  .btn-primary:hover{background:var(--teal2);transform:translateY(-2px);}
+  .btn-outline{border:2px solid rgba(255,255,255,.3);color:var(--white);padding:.85rem 2rem;border-radius:50px;font-weight:600;font-size:.95rem;transition:.3s;cursor:pointer;background:transparent;}
+  .btn-outline:hover{border-color:var(--teal);color:var(--teal);}
+  .btn-diag{background:linear-gradient(135deg,#F5A623,#e8920e);color:var(--white);padding:.85rem 2rem;border-radius:50px;font-weight:700;font-size:.95rem;transition:.3s;cursor:pointer;border:none;box-shadow:0 4px 20px rgba(245,166,35,.35);}
+  .btn-diag:hover{transform:translateY(-2px);}
+  .hero-deco{position:absolute;right:-100px;top:50%;transform:translateY(-50%);width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(0,201,167,.12) 0%,transparent 70%);pointer-events:none;}
+  .hero-deco2{position:absolute;right:150px;top:100px;width:200px;height:200px;border-radius:50%;border:1px solid rgba(0,201,167,.15);pointer-events:none;}
+  .hero-deco3{position:absolute;right:300px;bottom:100px;width:120px;height:120px;border-radius:50%;border:1px solid rgba(0,201,167,.1);pointer-events:none;}
+  .scroll-hint{position:absolute;bottom:2rem;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:.4rem;color:rgba(255,255,255,.4);font-size:.75rem;}
+  .scroll-dot{width:6px;height:6px;background:var(--teal);border-radius:50%;animation:bounce 1.6s infinite;}
+  @keyframes bounce{0%,100%{transform:translateY(0);}50%{transform:translateY(8px);}}
+
+  section{padding:5rem 6%;}
+  .section-tag{display:inline-block;background:rgba(0,201,167,.1);color:var(--teal2);font-size:.75rem;font-weight:700;padding:.3rem .9rem;border-radius:20px;letter-spacing:2px;margin-bottom:1rem;}
+  .section-title{font-size:2.2rem;font-weight:800;color:var(--navy);margin-bottom:.8rem;}
+  .section-sub{color:var(--gray);font-size:1rem;line-height:1.7;max-width:560px;}
+
+  #servicios{background:var(--light);}
+  .services-header{margin-bottom:3rem;}
+  .services-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem;}
+  .service-card{background:var(--white);border-radius:16px;padding:2rem;border:1px solid #E5EAF0;transition:.3s;position:relative;overflow:hidden;}
+  .service-card::before{content:'';position:absolute;top:0;left:0;width:4px;height:100%;background:var(--teal);transform:scaleY(0);transition:.3s;transform-origin:top;}
+  .service-card:hover{transform:translateY(-6px);box-shadow:0 16px 40px rgba(0,201,167,.12);}
+  .service-card:hover::before{transform:scaleY(1);}
+  .svc-icon{width:52px;height:52px;background:rgba(0,201,167,.1);border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:1.2rem;font-size:1.6rem;}
+  .service-card h3{font-size:1.15rem;font-weight:700;margin-bottom:.7rem;color:var(--navy);}
+  .service-card p{color:var(--gray);font-size:.9rem;line-height:1.7;}
+  .comp-tags{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:1rem;}
+  .tag{background:rgba(0,201,167,.08);color:var(--teal2);font-size:.72rem;font-weight:600;padding:.25rem .7rem;border-radius:20px;}
+
+  #quienes{display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:start;}
+  .qs-text .section-sub{max-width:100%;}
+  .qs-values{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:2rem;}
+  .val-item{padding:1.2rem;background:var(--light);border-radius:12px;}
+  .val-item strong{display:block;color:var(--navy);font-size:.95rem;margin-bottom:.3rem;}
+  .val-item span{color:var(--gray);font-size:.83rem;line-height:1.5;}
+  .qs-cards{display:flex;flex-direction:column;gap:1.5rem;}
+  .qs-card{background:linear-gradient(135deg,var(--navy),#0D2A4A);border-radius:20px;padding:2rem;color:var(--white);}
+  .qs-card h3{font-size:1.2rem;font-weight:800;margin-bottom:.3rem;}
+  .qs-card .sub{color:rgba(255,255,255,.6);font-size:.82rem;margin-bottom:1.2rem;}
+  .profile-stats{display:flex;flex-direction:column;gap:.8rem;}
+  .stat{display:flex;align-items:center;gap:1rem;padding:.85rem;background:rgba(255,255,255,.05);border-radius:10px;border:1px solid rgba(255,255,255,.08);}
+  .stat-icon{font-size:1.2rem;flex-shrink:0;}
+  .stat strong{display:block;color:var(--teal);font-size:.88rem;}
+  .stat span{color:rgba(255,255,255,.6);font-size:.78rem;}
+
+  #testimonios{background:var(--light);}
+  .test-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem;margin-top:2.5rem;}
+  .test-card{background:var(--white);border-radius:16px;padding:2rem;border:1px solid #E5EAF0;}
+  .stars{color:#F5A623;font-size:1rem;margin-bottom:1rem;}
+  .test-card blockquote{color:var(--gray);font-size:.9rem;line-height:1.75;font-style:italic;margin-bottom:1.5rem;}
+  .test-author{display:flex;align-items:center;gap:.8rem;}
+  .avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--navy));display:flex;align-items:center;justify-content:center;color:var(--white);font-weight:700;font-size:.9rem;}
+  .test-author strong{display:block;font-size:.9rem;color:var(--navy);}
+  .test-author span{font-size:.78rem;color:var(--gray);}
+
+  #contacto{background:linear-gradient(135deg,var(--navy) 0%,#0A3D3A 100%);color:var(--white);}
+  #contacto .section-title{color:var(--white);}
+  #contacto .section-sub{color:rgba(255,255,255,.6);}
+  #contacto .section-tag{background:rgba(0,201,167,.15);color:var(--teal);}
+  .contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:4rem;margin-top:3rem;align-items:start;}
+  .contact-info{display:flex;flex-direction:column;gap:1.5rem;}
+  .ci-item{display:flex;align-items:center;gap:1rem;}
+  .ci-icon{width:44px;height:44px;background:rgba(0,201,167,.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;}
+  .ci-item strong{display:block;color:var(--teal);font-size:.8rem;margin-bottom:.2rem;}
+  .ci-item span{color:rgba(255,255,255,.7);font-size:.9rem;}
+  .ci-item a{color:var(--teal);text-decoration:none;}
+  .contact-form{display:flex;flex-direction:column;gap:1rem;}
+  .contact-form input,.contact-form textarea,.contact-form select{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);color:var(--white);padding:.9rem 1.2rem;border-radius:10px;font-size:.9rem;font-family:inherit;transition:.3s;width:100%;}
+  .contact-form select option{background:var(--navy);}
+  .contact-form input::placeholder,.contact-form textarea::placeholder{color:rgba(255,255,255,.4);}
+  .contact-form input:focus,.contact-form textarea:focus,.contact-form select:focus{outline:none;border-color:var(--teal);}
+  .contact-form textarea{resize:vertical;min-height:120px;}
+  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+  .btn-send{background:var(--teal);color:var(--navy);border:none;padding:.9rem 2rem;border-radius:50px;font-weight:700;font-size:.95rem;cursor:pointer;transition:.3s;width:100%;}
+  .btn-send:hover{background:var(--teal2);}
+
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999;align-items:center;justify-content:center;padding:1rem;}
+  .modal-overlay.open{display:flex;}
+  .modal{background:var(--white);border-radius:20px;padding:2.5rem;max-width:560px;width:100%;position:relative;max-height:90vh;overflow-y:auto;}
+  .modal-close{position:absolute;top:1rem;right:1.2rem;background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--gray);}
+  .modal-badge{display:inline-block;background:rgba(245,166,35,.12);border:1px solid #F5A623;color:#c97d00;font-size:.75rem;font-weight:700;padding:.3rem .9rem;border-radius:20px;letter-spacing:1px;margin-bottom:1rem;}
+  .modal h2{font-size:1.5rem;font-weight:800;color:var(--navy);margin-bottom:.8rem;}
+  .modal .intro{background:var(--light);border-left:4px solid var(--teal);border-radius:0 10px 10px 0;padding:1rem 1.2rem;color:var(--gray);font-size:.9rem;line-height:1.7;margin-bottom:1.5rem;}
+  .modal .intro strong{color:var(--navy);}
+  .diag-form{display:flex;flex-direction:column;gap:.9rem;}
+  .diag-form input{background:#F4F7FB;border:1px solid #DDE3EC;color:var(--navy);padding:.85rem 1.1rem;border-radius:10px;font-size:.9rem;font-family:inherit;transition:.3s;width:100%;}
+  .diag-form input::placeholder{color:#9BA8B8;}
+  .diag-form input:focus{outline:none;border-color:var(--teal);background:var(--white);}
+  .btn-wsp{background:linear-gradient(135deg,#25D366,#1ebe5b);color:var(--white);border:none;padding:1rem 2rem;border-radius:50px;font-weight:700;font-size:1rem;cursor:pointer;transition:.3s;width:100%;display:flex;align-items:center;justify-content:center;gap:.6rem;margin-top:.5rem;}
+  .btn-wsp:hover{transform:translateY(-2px);box-shadow:0 6px 24px rgba(37,211,102,.4);}
+  .modal-footer{text-align:center;margin-top:.8rem;color:var(--gray);font-size:.78rem;}
+
+  footer{background:var(--navy);padding:2rem 6%;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;border-top:1px solid rgba(255,255,255,.06);}
+  footer p{color:rgba(255,255,255,.4);font-size:.8rem;}
+
+  .fadein{opacity:0;transform:translateY(20px);transition:opacity .5s ease,transform .5s ease;}
+  .fadein.visible{opacity:1;transform:translateY(0);}
+
+  @media(max-width:768px){
+    .hero-content h1{font-size:2rem;}
+    #quienes{grid-template-columns:1fr;}
+    .contact-grid{grid-template-columns:1fr;}
+    .form-row{grid-template-columns:1fr;}
+    .qs-values{grid-template-columns:1fr;}
+    nav{padding:1rem 4%;}
+    .nav-links{gap:1rem;}
+  }
+</style>
+</head>
+<body>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modalDiag">
+  <div class="modal">
+    <button class="modal-close" onclick="cerrarDiag()">✕</button>
+    <div class="modal-badge">✦ COMPLETAMENTE GRATUITO</div>
+    <h2>Diagnóstico de Convivencia Escolar</h2>
+    <div class="intro">
+      <strong>¿Por qué solicitar este diagnóstico?</strong><br>
+      Este diagnóstico colabora a <strong>prevenir situaciones de crisis de convivencia</strong> en tu institución, permitiendo identificar factores de riesgo a tiempo y fortalecer el clima escolar. Es <strong>completamente gratuito</strong> y solo requieres seguir el proceso con nuestro equipo.
+    </div>
+    <div class="diag-form">
+      <input type="text" id="d_inst" placeholder="Nombre de la institución *"/>
+      <input type="text" id="d_nombre" placeholder="Nombre y apellidos de la persona contraparte *"/>
+      <input type="tel" id="d_tel" placeholder="Teléfono de contacto *"/>
+      <input type="email" id="d_mail" placeholder="Correo electrónico de contacto *"/>
+      <input type="text" id="d_dir" placeholder="Dirección de la institución"/>
+      <button class="btn-wsp" onclick="enviarDiagWSP()">
+        🚀 Enviar solicitud ahora
+      </button>
+      <div style="background:linear-gradient(135deg,#25D366,#1ebe5b);border-radius:12px;padding:1rem 1.4rem;text-align:center;margin-top:.5rem;">
+        <span style="color:white;font-size:.9rem;font-weight:600;">📞 ¿Tienes dudas? Llámanos al <a href="tel:+56976501780" style="color:white;font-weight:800;text-decoration:underline;">+56 9 7650 1780</a></span>
+      </div>
+    </div>
+    <div class="modal-footer">🔒 Tus datos son confidenciales y solo serán usados para contactarte.</div>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav>
+  <div class="logo" onclick="ir('inicio')">Audit<span class="name">Consultores</span><span class="ate-badge">ATE</span></div>
+  <ul class="nav-links">
+    <li><a onclick="ir('inicio')">Inicio</a></li>
+    <li><a onclick="ir('servicios')">Servicios</a></li>
+    <li><a onclick="ir('quienes')">Quiénes Somos</a></li>
+    <li><a onclick="ir('testimonios')">Testimonios</a></li>
+    <li><a onclick="ir('contacto')">Contacto</a></li>
+  </ul>
+</nav>
+
+<!-- INICIO -->
+<section id="inicio">
+  <div class="hero-deco"></div><div class="hero-deco2"></div><div class="hero-deco3"></div>
+  <div class="hero-content">
+    <div class="hero-tag">✦ ASISTENCIA TÉCNICA EDUCATIVA</div>
+    <h1>Transformamos <em>comunidades</em> y <em>organizaciones</em></h1>
+    <p>Somos una consultora ATE especializada en Convivencia Escolar, Calidad de Vida Laboral, Capacitación y Desarrollo de Competencias. Acompañamos a instituciones educativas y organizaciones en su camino hacia la mejora continua.</p>
+    <div class="hero-btns">
+      <button class="btn-primary" onclick="ir('servicios')">Conocer Servicios</button>
+      <button class="btn-outline" onclick="ir('contacto')">Contactar</button>
+      <button class="btn-diag" onclick="abrirDiag()">🔍 Solicita Diagnóstico Gratuito</button>
+    </div>
+  </div>
+  <div class="scroll-hint"><span>Explorar</span><div class="scroll-dot"></div></div>
+</section>
+
+<!-- SERVICIOS -->
+<section id="servicios">
+  <div class="services-header">
+    <div class="section-tag">NUESTROS SERVICIOS</div>
+    <h2 class="section-title">¿Qué ofrecemos?</h2>
+    <p class="section-sub">Soluciones especializadas para instituciones educativas y organizaciones que buscan mejorar su cultura, clima y desempeño.</p>
+  </div>
+  <div class="services-grid">
+
+    <div class="service-card fadein">
+      <div class="svc-icon">🏫</div>
+      <h3>Convivencia Escolar</h3>
+      <p>Diseñamos e implementamos programas integrales para fortalecer la convivencia en comunidades educativas, promoviendo ambientes seguros, inclusivos y colaborativos.</p>
+      <div class="comp-tags"><span class="tag">Diagnóstico</span><span class="tag">Planes de acción</span><span class="tag">Talleres</span><span class="tag">Protocolos</span></div>
+    </div>
+
+    <div class="service-card fadein">
+      <div class="svc-icon">📊</div>
+      <h3>Evaluación de Desempeño</h3>
+      <p>Diseñamos e implementamos procesos de evaluación con <strong style="color:var(--teal2)">bajo nivel de resistencia</strong> y <strong style="color:var(--teal2)">altos niveles de legitimidad</strong>, logrando que los equipos reconozcan el proceso como justo, transparente y orientado al desarrollo profesional.</p>
+      <div class="comp-tags"><span class="tag">Alta legitimidad</span><span class="tag">Baja resistencia</span><span class="tag">Desarrollo profesional</span><span class="tag">Retroalimentación efectiva</span></div>
+    </div>
+
+    <div class="service-card fadein">
+      <div class="svc-icon">💼</div>
+      <h3>Calidad de Vida Laboral</h3>
+      <p>Evaluamos y mejoramos el bienestar de los equipos de trabajo, identificando factores de riesgo psicosocial y generando condiciones para un desempeño sostenible y saludable.</p>
+      <div class="comp-tags"><span class="tag">Bienestar</span><span class="tag">Clima laboral</span><span class="tag">Riesgo psicosocial</span></div>
+    </div>
+
+    <div class="service-card fadein">
+      <div class="svc-icon">🧭</div>
+      <h3>Consultoría Estratégica</h3>
+      <p>Apoyamos a equipos directivos en la construcción de visión compartida, alineamiento organizacional y planificación estratégica, fortaleciendo la cohesión y el foco en los objetivos institucionales.</p>
+      <div class="comp-tags"><span class="tag">Alineamiento directivo</span><span class="tag">Planificación estratégica</span><span class="tag">Coaching directivo</span></div>
+    </div>
+
+    <div class="service-card fadein">
+      <div class="svc-icon">📋</div>
+      <h3>Capacitación</h3>
+      <p>Ofrecemos programas de capacitación diseñados a la medida de cada organización, orientados a fortalecer las habilidades blandas y el desempeño de equipos directivos, docentes y colaboradores.</p>
+      <div class="comp-tags"><span class="tag">Liderazgo</span><span class="tag">Trabajo en equipo</span><span class="tag">Gestión del conflicto</span><span class="tag">Comunicación efectiva</span><span class="tag">Coaching</span><span class="tag">Inteligencia emocional</span></div>
+    </div>
+
+    <div class="service-card fadein">
+      <div class="svc-icon">🎯</div>
+      <h3>Desarrollo de Competencias</h3>
+      <p>Potenciamos las capacidades directivas, docentes y de equipos a través de programas de formación y acompañamiento en competencias clave para el liderazgo y la gestión organizacional.</p>
+      <div class="comp-tags"><span class="tag">Liderazgo</span><span class="tag">Coaching</span><span class="tag">Ejercicio de Autoridad</span><span class="tag">Gestión de la incertidumbre</span><span class="tag">Articulador de convivencia</span></div>
+    </div>
+
+    <div class="service-card fadein">
+      <div class="svc-icon">🔗</div>
+      <h3>Alineamiento Directivo & Coaching Ontológico</h3>
+      <p>Acompañamos a líderes y equipos de conducción en procesos de alineamiento estratégico y transformación personal, utilizando el Coaching Ontológico para fortalecer la identidad directiva y la gestión efectiva de equipos.</p>
+      <div class="comp-tags"><span class="tag">Directivos</span><span class="tag">Jefaturas</span><span class="tag">Mandos medios</span><span class="tag">Coaching Ontológico</span><span class="tag">Alineamiento estratégico</span></div>
+    </div>
+
+    <div class="service-card fadein">
+      <div class="svc-icon">🚀</div>
+      <h3>Gestión y Apoyo al Cambio</h3>
+      <p>En el escenario actual, <strong style="color:var(--teal2)">el cambio se ha vuelto un fenómeno permanente e ineludible</strong> para toda organización que busca mantenerse vigente y competitiva. Utilizamos las <strong style="color:var(--teal2)">principales metodologías del fenómeno del cambio</strong> para diseñar e implementar procesos de transición comprendidos, aceptados y apropiados por las personas, minimizando la incertidumbre y maximizando los resultados.</p>
+      <div class="comp-tags"><span class="tag">Kotter</span><span class="tag">ADKAR</span><span class="tag">Lewin</span><span class="tag">Acompañamiento humano</span><span class="tag">Gestión de resistencias</span></div>
+    </div>
+
+    <div class="service-card fadein">
+      <div class="svc-icon">🔬</div>
+      <h3>Estudios Organizacionales</h3>
+      <p>Realizamos estudios especializados que entregan información estratégica y diagnóstica para la toma de decisiones, el diseño de intervenciones y el fortalecimiento de la cultura organizacional e institucional.</p>
+      <div class="comp-tags">
+        <span class="tag">Diagnóstico de Convivencia</span>
+        <span class="tag">Estudio de Liderazgo</span>
+        <span class="tag">Ejercicio de la Autoridad</span>
+        <span class="tag">Clima y Cultura Organizacional</span>
+        <span class="tag">Resistencia al Cambio</span>
+      </div>
+    </div>
+
+  </div>
+</section>
+<section id="quienes">
+  <div class="qs-text">
+    <div class="section-tag">QUIÉNES SOMOS</div>
+    <h2 class="section-title">Consultoría con propósito y rigor académico</h2>
+    <p class="section-sub">AuditConsultores es una Asistencia Técnica Educativa (ATE) que nace desde la experiencia en el mundo educativo y organizacional, combinando investigación, consultoría y formación para generar impacto real y duradero.</p>
+    <div class="qs-values">
+      <div class="val-item fadein"><strong>🎓 Formación de excelencia</strong><span>Respaldo académico de nivel doctoral en Psicología Laboral y formación en RRHH y gestión.</span></div>
+      <div class="val-item fadein"><strong>🔍 Enfoque sistémico</strong><span>Miramos las organizaciones como sistemas complejos que requieren intervenciones integrales.</span></div>
+      <div class="val-item fadein"><strong>🤝 Acompañamiento real</strong><span>No solo diagnósticos: nos quedamos en el proceso hasta ver resultados concretos.</span></div>
+      <div class="val-item fadein"><strong>📋 Registro ATE</strong><span>Consultora habilitada para trabajar con establecimientos educacionales según normativa MINEDUC.</span></div>
+    </div>
+  </div>
+  <div class="qs-cards">
+    <div class="qs-card fadein">
+      <h3>Rodrigo Godoy Pineda</h3>
+      <div class="sub">Director de Consultoría</div>
+      <div class="profile-stats">
+        <div class="stat"><div class="stat-icon">🎓</div><div><strong>Doctor en Psicología Laboral</strong><span>Universidad de Barcelona</span></div></div>
+        <div class="stat"><div class="stat-icon">📚</div><div><strong>Profesor de Historia · MBA · Máster RRHH</strong><span>Formación multidisciplinaria</span></div></div>
+        <div class="stat"><div class="stat-icon">🏢</div><div><strong>Consultor Independiente</strong><span>Desarrollo Organizacional · Coaching · Liderazgo</span></div></div>
+        <div class="stat"><div class="stat-icon">✅</div><div><strong>ATE Registrada en Chile</strong><span>Persona natural · Consultor habilitado</span></div></div>
+      </div>
+    </div>
+    <div class="qs-card fadein">
+      <h3>Domingo Ignacio Larrea Lagos</h3>
+      <div class="sub">Director de Gestión y Desarrollo</div>
+      <div class="profile-stats">
+        <div class="stat"><div class="stat-icon">🎓</div><div><strong>Ingeniero Comercial mención Finanzas y Marketing</strong><span>Universidad de Santiago de Chile</span></div></div>
+        <div class="stat"><div class="stat-icon">📋</div><div><strong>Auditor Líder ISO 9001 · ISO 14001 · OHSAS</strong><span>Certificado IRCA · Lloyd's Register Quality Assurance</span></div></div>
+        <div class="stat"><div class="stat-icon">🏢</div><div><strong>Consultor en Gestión, Calidad y Marketing</strong><span>+30 años de experiencia en consultoría organizacional</span></div></div>
+        <div class="stat"><div class="stat-icon">📊</div><div><strong>Docente Universitario</strong><span>USACH · UCSH · Universidad Pedro de Valdivia</span></div></div>
+      </div>
+    </div>
+    <div class="qs-card fadein">
+      <h3>Julia Carola Corrotea Ortiz</h3>
+      <div class="sub">Directora de Comunidades Educativas</div>
+      <div class="profile-stats">
+        <div class="stat"><div class="stat-icon">🎓</div><div><strong>Profesora de Educación General Básica – Mención LOP</strong><span>Formación pedagógica especializada en primer ciclo</span></div></div>
+        <div class="stat"><div class="stat-icon">📅</div><div><strong>20 años de experiencia docente</strong><span>Trayectoria en establecimientos educacionales</span></div></div>
+        <div class="stat"><div class="stat-icon">🏫</div><div><strong>Consultora en Gestión Educacional</strong><span>Gestión y administración en comunidades educativas</span></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIOS -->
+<section id="testimonios">
+  <div class="section-tag">TESTIMONIOS</div>
+  <h2 class="section-title">Lo que dicen nuestros clientes</h2>
+  <div class="test-grid">
+    <div class="test-card fadein">
+      <div class="stars">★★★★★</div>
+      <blockquote>"La intervención en convivencia escolar transformó completamente el clima de nuestro establecimiento. El acompañamiento fue cercano, profesional y con resultados muy concretos."</blockquote>
+      <div class="test-author"><div class="avatar">AM</div><div><strong>Ana M.</strong><span>Directora, Colegio Región Metropolitana</span></div></div>
+    </div>
+    <div class="test-card fadein">
+      <div class="stars">★★★★★</div>
+      <blockquote>"El programa de liderazgo y coaching para nuestros jefes de UTP fue un antes y un después. Desarrollaron herramientas reales para gestionar equipos y situaciones complejas."</blockquote>
+      <div class="test-author"><div class="avatar">CP</div><div><strong>Carlos P.</strong><span>Sostenedor, Red de Colegios</span></div></div>
+    </div>
+    <div class="test-card fadein">
+      <div class="stars">★★★★★</div>
+      <blockquote>"Nos ayudaron a identificar los factores de riesgo psicosocial y a construir un plan de mejora. Muy rigurosos metodológicamente, con enfoque humano y práctico."</blockquote>
+      <div class="test-author"><div class="avatar">MV</div><div><strong>María V.</strong><span>Coordinadora RRHH, Fundación Educacional</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- CONTACTO -->
+<section id="contacto">
+  <div class="section-tag">CONTACTO</div>
+  <h2 class="section-title">¿Hablamos?</h2>
+  <p class="section-sub">Cuéntanos tu desafío y diseñamos juntos la solución más adecuada para tu institución u organización.</p>
+  <div class="contact-grid">
+    <div class="contact-info">
+      <div class="ci-item"><div class="ci-icon">📍</div><div><strong>UBICACIÓN</strong><span>Santiago, Chile</span></div></div>
+      <div class="ci-item"><div class="ci-icon">✉️</div><div><strong>EMAIL</strong><span><a href="mailto:rodrigogodoyp@auditconsultores.cl">rodrigogodoyp@auditconsultores.cl</a></span></div></div>
+      <div class="ci-item"><div class="ci-icon">📱</div><div><strong>MÓVIL &amp; WHATSAPP</strong><span><a href="https://wa.me/56976501780" target="_blank">+56 9 7650 1780</a></span></div></div>
+      <div class="ci-item"><div class="ci-icon">🗓️</div><div><strong>HORARIO</strong><span>Lunes a Viernes · 9:00 – 18:00 hrs</span></div></div>
+    </div>
+    <div class="contact-form">
+      <div class="form-row">
+        <input type="text" id="nombre" placeholder="Nombre completo"/>
+        <input type="text" id="institucion" placeholder="Institución / Organización"/>
+      </div>
+      <input type="email" id="email" placeholder="Correo electrónico"/>
+      <select id="servicio">
+        <option value="">Servicio de interés...</option>
+        <option>Convivencia Escolar</option>
+        <option>Evaluación de Desempeño</option>
+        <option>Calidad de Vida Laboral</option>
+        <option>Consultoría Estratégica</option>
+        <option>Capacitación</option>
+        <option>Desarrollo de Competencias</option>
+        <option>Alineamiento Directivo y Coaching Ontológico</option>
+        <option>Gestión del Cambio</option>
+        <option>Gestión y Apoyo al Cambio</option>
+        <option>Otro / Consulta general</option>
+      </select>
+      <textarea id="mensaje" placeholder="Cuéntanos sobre tu necesidad o proyecto..."></textarea>
+      <button class="btn-send" onclick="enviarFormulario()">✉ Enviar mensaje</button>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="logo" onclick="ir('inicio')">Audit<span class="name">Consultores</span><span class="ate-badge">ATE</span></div>
+  <p>© 2025 AuditConsultores · Rodrigo Godoy Pineda · Santiago, Chile</p>
+  <p style="color:rgba(255,255,255,.3);font-size:.75rem;">Consultor ATE registrado MINEDUC</p>
+</footer>
+
+<script>
+  function ir(id){ document.getElementById(id).scrollIntoView({behavior:'smooth',block:'start'}); }
+  function abrirDiag(){ document.getElementById('modalDiag').classList.add('open'); document.body.style.overflow='hidden'; }
+  function cerrarDiag(){ document.getElementById('modalDiag').classList.remove('open'); document.body.style.overflow=''; }
+  document.getElementById('modalDiag').addEventListener('click',function(e){ if(e.target===this) cerrarDiag(); });
+
+  function enviarDiagWSP(){
+    var inst=document.getElementById('d_inst').value.trim();
+    var nombre=document.getElementById('d_nombre').value.trim();
+    var tel=document.getElementById('d_tel').value.trim();
+    var mail=document.getElementById('d_mail').value.trim();
+    var dir=document.getElementById('d_dir').value.trim();
+    var btn=document.querySelector('.btn-wsp');
+    if(!inst||!nombre||!tel||!mail){
+      btn.textContent='⚠ Completa los campos obligatorios';
+      btn.style.background='#e67e22';
+      setTimeout(function(){ btn.textContent='Enviar por WhatsApp'; btn.style.background=''; },2500);
+      return;
+    }
+    var msg='🏫 *SOLICITUD DE DIAGNÓSTICO DE CONVIVENCIA ESCOLAR*\n\n'+'📌 *Institución:* '+inst+'\n'+'👤 *Contraparte:* '+nombre+'\n'+'📞 *Teléfono:* '+tel+'\n'+'✉️ *Email:* '+mail+'\n'+'📍 *Dirección:* '+(dir||'No indicada')+'\n\n'+'✅ Solicita diagnóstico gratuito de convivencia escolar.';
+    window.open('https://wa.me/56976501780?text='+encodeURIComponent(msg),'_blank');
+  }
+
+  async function enviarFormulario(){
+    var nombre      = document.getElementById('nombre').value.trim();
+    var institucion = document.getElementById('institucion').value.trim();
+    var email       = document.getElementById('email').value.trim();
+    var servicio    = document.getElementById('servicio').value;
+    var mensaje     = document.getElementById('mensaje').value.trim();
+    var btn         = document.querySelector('.btn-send');
+    
+    if(!nombre || !email){
+      btn.textContent='⚠ Completa nombre y email';
+      btn.style.background='#e67e22';
+      setTimeout(function(){ btn.textContent='✉ Enviar mensaje'; btn.style.background=''; },2500);
+      return;
+    }
+    
+    btn.textContent='⏳ Enviando...';
+    btn.disabled=true;
+    
+    try {
+      var respuesta = await fetch('enviar_contacto.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          nombre: nombre,
+          institucion: institucion,
+          email: email,
+          servicio: servicio,
+          mensaje: mensaje
+        })
+      });
+    
+      var data = await respuesta.json();
+    
+      if (!respuesta.ok || !data.ok) {
+        throw new Error(data.message || 'No se pudo enviar el mensaje.');
+      }
+    
+      btn.textContent='✓ Mensaje enviado';
+      btn.style.background='#00A88E';
+      btn.disabled=false;
+    
+      document.getElementById('nombre').value='';
+      document.getElementById('institucion').value='';
+      document.getElementById('email').value='';
+      document.getElementById('servicio').selectedIndex=0;
+      document.getElementById('mensaje').value='';
+    
+      setTimeout(function(){ btn.textContent='✉ Enviar mensaje'; btn.style.background=''; },3000);
+    
+    } catch (error) {
+      console.error(error);
+      btn.textContent='❌ Error al enviar. Inténtalo de nuevo.';
+      btn.style.background='#e74c3c';
+      btn.disabled=false;
+      setTimeout(function(){ btn.textContent='✉ Enviar mensaje'; btn.style.background=''; },3000);
+    }
+  }
+
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){ if(e.isIntersecting) e.target.classList.add('visible'); });
+  },{threshold:0.1});
+  document.querySelectorAll('.fadein').forEach(function(el){ obs.observe(el); });
+</script>
+</body>
+</html>
