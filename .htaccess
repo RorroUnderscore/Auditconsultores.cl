@@ -1,5 +1,16 @@
 RewriteEngine On
 
+# --- Variables de entorno para BD / Admin ---
+# Reemplaza estos valores por tus datos reales en cPanel.
+SetEnv DB_CONNECTION mysql
+SetEnv DB_HOST localhost
+SetEnv DB_PORT 3306
+SetEnv DB_DATABASE tupresen_audit360
+SetEnv DB_USERNAME tupresen_audituser
+SetEnv DB_PASSWORD Rodrigos.123
+SetEnv ADMIN_DEFAULT_EMAIL admin@auditconsultores.cl
+SetEnv ADMIN_DEFAULT_PASSWORD Rodrigos.123
+
 # keep existing files/directories
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d

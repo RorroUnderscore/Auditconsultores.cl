@@ -4,29 +4,60 @@ function db(): PDO {
     static $pdo = null;
     if ($pdo instanceof PDO) return $pdo;
 
-    $dbPath = __DIR__ . '/../data/app.sqlite';
-    if (!is_dir(dirname($dbPath))) mkdir(dirname($dbPath), 0775, true);
-    $pdo = new PDO('sqlite:' . $dbPath);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $driver = getenv('DB_CONNECTION') ?: 'sqlite';
+
+    if ($driver === 'mysql') {
+        $host = getenv('DB_HOST') ?: 'localhost';
+        $port = getenv('DB_PORT') ?: '3306';
+        $name = getenv('DB_DATABASE') ?: '';
+        $user = getenv('DB_USERNAME') ?: '';
+        $pass = getenv('DB_PASSWORD') ?: '';
+        if ($name === '' || $user === '') {
+            throw new RuntimeException('Faltan DB_DATABASE o DB_USERNAME para conexión MySQL.');
+        }
+        $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $name);
+        $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+    } else {
+        $dbPath = __DIR__ . '/../data/app.sqlite';
+        if (!is_dir(dirname($dbPath))) mkdir(dirname($dbPath), 0775, true);
+        $pdo = new PDO('sqlite:' . $dbPath);
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        $pdo->exec('PRAGMA foreign_keys = ON');
+    }
+
     migrate($pdo);
     return $pdo;
 }
 
 function migrate(PDO $pdo): void {
-    $pdo->exec('CREATE TABLE IF NOT EXISTS admins (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE, password_hash TEXT NOT NULL)');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS institutions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY AUTOINCREMENT, institution_id INTEGER NOT NULL, name TEXT NOT NULL, FOREIGN KEY(institution_id) REFERENCES institutions(id))');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS surveys (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, name TEXT NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id))');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS forms (id INTEGER PRIMARY KEY AUTOINCREMENT, survey_id INTEGER NOT NULL, estate TEXT NOT NULL, status TEXT NOT NULL DEFAULT "draft")');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY AUTOINCREMENT, form_id INTEGER NOT NULL, text TEXT NOT NULL, q_order INTEGER NOT NULL DEFAULT 1, required INTEGER NOT NULL DEFAULT 1)');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS participants (id INTEGER PRIMARY KEY AUTOINCREMENT, institution_id INTEGER NOT NULL, project_id INTEGER NOT NULL, estate TEXT NOT NULL, name TEXT NOT NULL, email TEXT NOT NULL)');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS invitation_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, participant_id INTEGER NOT NULL, form_id INTEGER NOT NULL, token TEXT UNIQUE NOT NULL, used_at TEXT NULL)');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS responses (id INTEGER PRIMARY KEY AUTOINCREMENT, token_id INTEGER NOT NULL, submitted_at TEXT NOT NULL)');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS response_answers (id INTEGER PRIMARY KEY AUTOINCREMENT, response_id INTEGER NOT NULL, question_id INTEGER NOT NULL, value INTEGER NOT NULL)');
+    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+    $idCol = $driver === 'mysql' ? 'INT AUTO_INCREMENT PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT';
+    $text = $driver === 'mysql' ? 'VARCHAR(255)' : 'TEXT';
+    $longText = $driver === 'mysql' ? 'TEXT' : 'TEXT';
 
-    $count = (int)$pdo->query('SELECT COUNT(*) FROM admins')->fetchColumn();
-    if ($count === 0) {
-      $stmt = $pdo->prepare('INSERT INTO admins(email,password_hash) VALUES (?,?)');
-      $stmt->execute(['admin@auditconsultores.cl', password_hash('admin1234', PASSWORD_DEFAULT)]);
-    }
+    $pdo->exec("CREATE TABLE IF NOT EXISTS admins (id $idCol, email $text UNIQUE, password_hash $text NOT NULL)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS institutions (id $idCol, name $text NOT NULL)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS projects (id $idCol, institution_id INT NOT NULL, name $text NOT NULL, FOREIGN KEY(institution_id) REFERENCES institutions(id))");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS surveys (id $idCol, project_id INT NOT NULL, name $text NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id))");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS forms (id $idCol, survey_id INT NOT NULL, estate $text NOT NULL, status $text NOT NULL DEFAULT 'draft', FOREIGN KEY(survey_id) REFERENCES surveys(id))");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS questions (id $idCol, form_id INT NOT NULL, text $longText NOT NULL, q_order INT NOT NULL DEFAULT 1, required TINYINT NOT NULL DEFAULT 1, FOREIGN KEY(form_id) REFERENCES forms(id))");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS participants (id $idCol, institution_id INT NOT NULL, project_id INT NOT NULL, estate $text NOT NULL, name $text NOT NULL, email $text NOT NULL, FOREIGN KEY(institution_id) REFERENCES institutions(id), FOREIGN KEY(project_id) REFERENCES projects(id))");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS invitation_tokens (id $idCol, participant_id INT NOT NULL, form_id INT NOT NULL, token $text UNIQUE NOT NULL, used_at $text NULL, FOREIGN KEY(participant_id) REFERENCES participants(id), FOREIGN KEY(form_id) REFERENCES forms(id))");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS responses (id $idCol, token_id INT NOT NULL, submitted_at $text NOT NULL, FOREIGN KEY(token_id) REFERENCES invitation_tokens(id))");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS response_answers (id $idCol, response_id INT NOT NULL, question_id INT NOT NULL, value INT NOT NULL, FOREIGN KEY(response_id) REFERENCES responses(id), FOREIGN KEY(question_id) REFERENCES questions(id))");
+
+    seedDefaultAdmin($pdo);
+}
+
+function seedDefaultAdmin(PDO $pdo): void {
+    $adminEmail = getenv('ADMIN_DEFAULT_EMAIL') ?: 'admin@auditconsultores.cl';
+    $adminPassword = getenv('ADMIN_DEFAULT_PASSWORD') ?: 'admin1234';
+
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM admins WHERE email = ?');
+    $stmt->execute([$adminEmail]);
+    if ((int)$stmt->fetchColumn() > 0) return;
+
+    $stmt = $pdo->prepare('INSERT INTO admins(email,password_hash) VALUES (?,?)');
+    $stmt->execute([$adminEmail, password_hash($adminPassword, PASSWORD_DEFAULT)]);
 }
