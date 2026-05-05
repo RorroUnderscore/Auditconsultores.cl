@@ -1,6 +1,6 @@
 ---
 deployment:
   tasks:
-    - export DEPLOY_PATH=/home/tupresen/public_html/auditconsultores.cl
-    - /bin/mkdir -p $DEPLOY_PATH
-    - /bin/rsync -av --delete --exclude ".git/" --exclude ".github/" ./ $DEPLOY_PATH/
+    - export DEPLOYPATH=/home/tupresen/public_html/auditconsultores.cl
+    - /bin/mkdir -p "$DEPLOYPATH"
+    - /usr/bin/rsync -av --exclude='.git/' --exclude='.github/' --exclude='.cpanel.yml' ./ "$DEPLOYPATH"/

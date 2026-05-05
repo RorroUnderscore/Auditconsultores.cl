@@ -7,9 +7,9 @@ SetEnv DB_HOST localhost
 SetEnv DB_PORT 3306
 SetEnv DB_DATABASE tupresen_audit360
 SetEnv DB_USERNAME tupresen_audituser
-SetEnv DB_PASSWORD Rodrigos.123
+SetEnv DB_PASSWORD CAMBIAR_PASSWORD
 SetEnv ADMIN_DEFAULT_EMAIL admin@auditconsultores.cl
-SetEnv ADMIN_DEFAULT_PASSWORD Rodrigos.123
+SetEnv ADMIN_DEFAULT_PASSWORD CAMBIAR_PASSWORD_ADMIN
 
 # keep existing files/directories
 RewriteCond %{REQUEST_FILENAME} -f [OR]
