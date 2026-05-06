@@ -40,6 +40,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       ]);
     } elseif ($action === 'delete_participant') {
       $pdo->prepare('DELETE FROM participants WHERE id=?')->execute([(int)$_POST['participant_id']]);
+    } elseif ($action === 'save_template') {
+      $institutionId = (int)$_POST['institution_id'];
+      $type = (string)$_POST['template_type'];
+      $subject = trim((string)$_POST['subject']);
+      $body = trim((string)$_POST['body']);
+      $pdo->prepare('INSERT INTO communication_templates(institution_id, template_type, subject, body, updated_at) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE subject=VALUES(subject), body=VALUES(body), updated_at=VALUES(updated_at)')->execute([$institutionId, $type, $subject, $body, date('c')]);
     }
   } catch (Throwable $e) {
     error_log('[DASHBOARD_ERROR] ' . $e->getMessage());
@@ -57,6 +63,12 @@ $selectedInstitution = null;
 $contacts = [];
 $participants = [];
 $participantCounts = ['Directivos'=>0,'Docentes'=>0,'Apoderados'=>0,'Paradocentes'=>0];
+$templateDefaults = [
+  'formal' => ['subject'=>'Invitación a Diagnóstico Institucional', 'body'=>"Estimado/a [NOMBRE],\n\nLe invitamos a responder el diagnóstico institucional de [INSTITUCION].\n\nPuede ingresar en: [LINK]\n\nAtentamente,\nEquipo de Diagnóstico"],
+  'amigable' => ['subject'=>'¡Te invitamos a participar!', 'body'=>"Hola [NOMBRE],\n\nQueremos invitarte a responder el diagnóstico de [INSTITUCION].\n\nTu enlace es: [LINK]\n\n¡Gracias por participar!"],
+  'recordatorio' => ['subject'=>'Recordatorio: encuesta pendiente', 'body'=>"Hola [NOMBRE],\n\nTe recordamos que aún puedes responder el diagnóstico de [INSTITUCION].\n\nIngresa aquí: [LINK]\n\nGracias."]
+];
+$templates = $templateDefaults;
 
 if ($selectedInstitutionId > 0) {
   $stmt = $pdo->prepare('SELECT * FROM institutions WHERE id=? LIMIT 1');
@@ -72,6 +84,12 @@ if ($selectedInstitutionId > 0) {
     $pStmt->execute([$selectedInstitutionId]);
     $participants = $pStmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($participants as $p) { if(isset($participantCounts[$p['estate']])) $participantCounts[$p['estate']]++; }
+
+    $tStmt = $pdo->prepare('SELECT template_type, subject, body FROM communication_templates WHERE institution_id=?');
+    $tStmt->execute([$selectedInstitutionId]);
+    foreach ($tStmt->fetchAll(PDO::FETCH_ASSOC) as $tpl) {
+      $templates[$tpl['template_type']] = ['subject'=>(string)$tpl['subject'], 'body'=>(string)$tpl['body']];
+    }
   }
 }
 
@@ -150,7 +168,26 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
     <section class='card' style='margin-top:16px'><h3>Datos de la Institución</h3><div class='card-body'><form method='post'><input type='hidden' name='action' value='update_institution'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='datos'><div class='row'><div><label>Nombre</label><input name='name' value='<?= htmlspecialchars((string)$selectedInstitution['name']) ?>'></div><div><label>Calle</label><input name='address_line' value='<?= htmlspecialchars((string)($selectedInstitution['address_line']??'')) ?>'></div></div><div class='row'><div><label>Comuna</label><input name='commune' value='<?= htmlspecialchars((string)($selectedInstitution['commune']??'')) ?>'></div><div><label>Región</label><input name='region' value='<?= htmlspecialchars((string)($selectedInstitution['region']??'')) ?>'></div></div><div class='row'><div><label>Email</label><input name='email' value='<?= htmlspecialchars((string)($selectedInstitution['email']??'')) ?>'></div><div><label>Teléfono</label><input name='phone' value='<?= htmlspecialchars((string)($selectedInstitution['phone']??'')) ?>'></div></div><button class='btn'>Guardar</button></form></div></section>
   <?php elseif($tab==='cuestionarios'): ?><section class='card' style='margin-top:16px'><h3>Cuestionarios</h3><div class='card-body'><div class='empty'>Sección temporalmente vacía. Aquí haremos cambios del constructor.</div></div></section>
   <?php elseif($tab==='participantes'): ?><section class='card' style='margin-top:16px'><h3>Participantes</h3><div class='card-body'><div class='chips'><?php foreach($estates as $e): ?><span class='chip'><?= $e ?> (<?= (int)$participantCounts[$e] ?>)</span><?php endforeach; ?></div><form method='post' style='margin-top:10px'><input type='hidden' name='action' value='create_participant'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><div class='row'><div><label>Nombre</label><input name='full_name' required></div><div><label>Email</label><input name='email' required></div></div><label>Estamento</label><select name='estate'><?php foreach($estates as $e): ?><option><?= $e ?></option><?php endforeach; ?></select><button class='btn'>+ Agregar</button></form><table><thead><tr><th>Nombre</th><th>Mail</th><th>Estamento</th><th>Acciones</th></tr></thead><tbody><?php foreach($participants as $p): ?><tr><td><?= htmlspecialchars((string)$p['name']) ?></td><td><?= htmlspecialchars((string)$p['email']) ?></td><td><?= htmlspecialchars((string)$p['estate']) ?></td><td><form method='post'><input type='hidden' name='action' value='delete_participant'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><button class='btn danger'>Eliminar</button></form></td></tr><?php endforeach; ?></tbody></table></div></section>
-  <?php elseif($tab==='comunicaciones'): ?><section class='card' style='margin-top:16px'><h3>Plantillas de Carta</h3><div class='card-body'><div class='chips'><span class='chip active'>Formal</span><span class='chip'>Amigable</span><span class='chip'>Recordatorio</span></div></div></section>
+  <?php elseif($tab==='comunicaciones'): ?>
+    <section class='card' style='margin-top:16px'><h3>Plantillas de Carta</h3><div class='card-body'>
+      <div class='chips'><span class='chip active'>Formal</span><span class='chip'>Amigable</span><span class='chip'>Recordatorio</span></div>
+      <p style='margin-top:10px;color:#64748b'>Correo emisor previsto: <strong>infodiagnosticos@auditconsultores.cl</strong>. Variables soportadas: [NOMBRE], [INSTITUCION], [LINK].</p>
+    </div></section>
+    <div class='grid2' style='margin-top:14px'>
+      <?php foreach(['formal'=>'Formal','amigable'=>'Amigable','recordatorio'=>'Recordatorio'] as $type=>$label): ?>
+      <section class='card'><h3><?= $label ?></h3><div class='card-body'>
+        <form method='post'>
+          <input type='hidden' name='action' value='save_template'>
+          <input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'>
+          <input type='hidden' name='tab' value='comunicaciones'>
+          <input type='hidden' name='template_type' value='<?= $type ?>'>
+          <label>Asunto</label><input name='subject' value='<?= htmlspecialchars((string)($templates[$type]['subject'] ?? '')) ?>' required>
+          <label>Cuerpo</label><textarea name='body' rows='8' required><?= htmlspecialchars((string)($templates[$type]['body'] ?? '')) ?></textarea>
+          <button class='btn'>Guardar plantilla</button>
+        </form>
+      </div></section>
+      <?php endforeach; ?>
+    </div>
   <?php elseif($tab==='participacion'): ?><section class='card' style='margin-top:16px'><h3>Participación</h3><div class='card-body'><div class='empty'>Gráficos se conectarán con respuestas reales.</div></div></section>
   <?php elseif($tab==='resultados'): ?><section class='card' style='margin-top:16px'><h3>Resultados</h3><div class='card-body'><div class='empty'>Sin respuestas aún.</div></div></section>
   <?php elseif($tab==='entregable'): ?><section class='card' style='margin-top:16px'><h3>Entregable</h3><div class='card-body'><div class='empty'>Módulo en construcción.</div></div></section>
