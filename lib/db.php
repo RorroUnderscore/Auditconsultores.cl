@@ -27,8 +27,15 @@ function db(): PDO {
             throw new RuntimeException('Faltan DB_DATABASE o DB_USERNAME para conexión MySQL.');
         }
         $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $name);
-        $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
-    } else {
+        try {
+            $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+        } catch (Throwable $e) {
+            error_log('[DB_MYSQL_FALLBACK] ' . $e->getMessage());
+            $driver = 'sqlite';
+        }
+    }
+
+    if ($driver !== 'mysql') {
         $dbPath = __DIR__ . '/../data/app.sqlite';
         if (!is_dir(dirname($dbPath))) mkdir(dirname($dbPath), 0775, true);
         $pdo = new PDO('sqlite:' . $dbPath);
