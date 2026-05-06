@@ -4,50 +4,162 @@ require_once __DIR__ . '/../lib/db.php';
 if (!isset($_SESSION['admin_id'])) { header('Location: /admin'); exit; }
 
 $pdo = db();
-$estates = ['Directivos','Docentes','Apoderados','Paradocentes'];
-
 if (isset($_GET['logout'])) { session_destroy(); header('Location: /admin'); exit; }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $action = $_POST['action'] ?? '';
+
   if ($action === 'create_institution') {
-    $pdo->prepare('INSERT INTO institutions(name) VALUES (?)')->execute([trim((string)$_POST['name'])]);
-  } elseif ($action === 'create_project') {
-    $pdo->prepare('INSERT INTO projects(institution_id,name) VALUES (?,?)')->execute([(int)$_POST['institution_id'], trim((string)$_POST['name'])]);
-  } elseif ($action === 'create_survey') {
-    $pdo->prepare('INSERT INTO surveys(project_id,name) VALUES (?,?)')->execute([(int)$_POST['project_id'], trim((string)$_POST['name'])]);
-  } elseif ($action === 'create_form') {
-    $pdo->prepare('INSERT INTO forms(survey_id,estate,status) VALUES (?,?,?)')->execute([(int)$_POST['survey_id'], (string)$_POST['estate'], (string)$_POST['status']]);
-  } elseif ($action === 'create_question') {
-    $pdo->prepare('INSERT INTO questions(form_id,text,q_order,required) VALUES (?,?,?,1)')->execute([(int)$_POST['form_id'], trim((string)$_POST['text']), (int)$_POST['q_order']]);
-  } elseif ($action === 'create_participant') {
-    $pdo->prepare('INSERT INTO participants(institution_id,project_id,estate,name,email) VALUES (?,?,?,?,?)')->execute([(int)$_POST['institution_id'], (int)$_POST['project_id'], (string)$_POST['estate'], trim((string)$_POST['name']), trim((string)$_POST['email'])]);
-  } elseif ($action === 'generate_token') {
-    $participantId = (int)$_POST['participant_id'];
-    $formId = (int)$_POST['form_id'];
-    $token = bin2hex(random_bytes(16));
-    $pdo->prepare('INSERT INTO invitation_tokens(participant_id,form_id,token) VALUES (?,?,?)')->execute([$participantId,$formId,$token]);
+    $stmt = $pdo->prepare('INSERT INTO institutions(name, code, rbd, region, commune, address_line, email, phone, dependency, status) VALUES (?,?,?,?,?,?,?,?,?,?)');
+    $stmt->execute([
+      trim((string)$_POST['name']), trim((string)$_POST['code']), trim((string)$_POST['rbd']),
+      trim((string)$_POST['region']), trim((string)$_POST['commune']), trim((string)$_POST['address_line']),
+      trim((string)$_POST['email']), trim((string)$_POST['phone']), trim((string)$_POST['dependency']),
+      (string)($_POST['status'] ?? 'active')
+    ]);
+  } elseif ($action === 'update_institution') {
+    $stmt = $pdo->prepare('UPDATE institutions SET name=?, code=?, rbd=?, region=?, commune=?, address_line=?, email=?, phone=?, dependency=?, status=? WHERE id=?');
+    $stmt->execute([
+      trim((string)$_POST['name']), trim((string)$_POST['code']), trim((string)$_POST['rbd']),
+      trim((string)$_POST['region']), trim((string)$_POST['commune']), trim((string)$_POST['address_line']),
+      trim((string)$_POST['email']), trim((string)$_POST['phone']), trim((string)$_POST['dependency']),
+      (string)($_POST['status'] ?? 'active'), (int)$_POST['institution_id']
+    ]);
+  } elseif ($action === 'delete_institution') {
+    $pdo->prepare('DELETE FROM institutions WHERE id=?')->execute([(int)$_POST['institution_id']]);
+  } elseif ($action === 'create_contact') {
+    $stmt = $pdo->prepare('INSERT INTO institution_contacts(institution_id, full_name, role_title, email, phone, is_primary) VALUES (?,?,?,?,?,?)');
+    $stmt->execute([(int)$_POST['institution_id'], trim((string)$_POST['full_name']), trim((string)$_POST['role_title']), trim((string)$_POST['email']), trim((string)$_POST['phone']), isset($_POST['is_primary']) ? 1 : 0]);
+  } elseif ($action === 'delete_contact') {
+    $pdo->prepare('DELETE FROM institution_contacts WHERE id=?')->execute([(int)$_POST['contact_id']]);
   }
-  header('Location: /admin/dashboard.php'); exit;
+
+  $redirect = '/admin/dashboard.php';
+  if (!empty($_POST['redirect_institution_id'])) $redirect .= '?institution_id=' . (int)$_POST['redirect_institution_id'];
+  header('Location: ' . $redirect);
+  exit;
 }
 
 $institutions = $pdo->query('SELECT * FROM institutions ORDER BY id DESC')->fetchAll(PDO::FETCH_ASSOC);
-$projects = $pdo->query('SELECT p.*, i.name institution_name FROM projects p JOIN institutions i ON i.id=p.institution_id ORDER BY p.id DESC')->fetchAll(PDO::FETCH_ASSOC);
-$surveys = $pdo->query('SELECT s.*, p.name project_name FROM surveys s JOIN projects p ON p.id=s.project_id ORDER BY s.id DESC')->fetchAll(PDO::FETCH_ASSOC);
-$forms = $pdo->query('SELECT f.*, s.name survey_name FROM forms f JOIN surveys s ON s.id=f.survey_id ORDER BY f.id DESC')->fetchAll(PDO::FETCH_ASSOC);
-$participants = $pdo->query('SELECT * FROM participants ORDER BY id DESC')->fetchAll(PDO::FETCH_ASSOC);
-$tokens = $pdo->query('SELECT t.*, p.email, p.name, f.estate FROM invitation_tokens t JOIN participants p ON p.id=t.participant_id JOIN forms f ON f.id=t.form_id ORDER BY t.id DESC')->fetchAll(PDO::FETCH_ASSOC);
+$selectedInstitutionId = isset($_GET['institution_id']) ? (int)$_GET['institution_id'] : 0;
+$selectedInstitution = null;
+$contacts = [];
+
+if ($selectedInstitutionId > 0) {
+  $stmt = $pdo->prepare('SELECT * FROM institutions WHERE id=? LIMIT 1');
+  $stmt->execute([$selectedInstitutionId]);
+  $selectedInstitution = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+  if ($selectedInstitution) {
+    $cStmt = $pdo->prepare('SELECT * FROM institution_contacts WHERE institution_id=? ORDER BY is_primary DESC, id DESC');
+    $cStmt->execute([$selectedInstitutionId]);
+    $contacts = $cStmt->fetchAll(PDO::FETCH_ASSOC);
+  }
+}
 ?>
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard</title><style>body{font-family:Segoe UI,sans-serif;background:#f8fafc;padding:24px;color:#0f172a}.box{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:10px 0}input,select,button{padding:8px;border:1px solid #cbd5e1;border-radius:8px}button{background:#00C9A7;border:none;font-weight:700}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #e2e8f0;padding:6px;font-size:13px}.top{display:flex;justify-content:space-between}</style></head><body>
-<div class='top'><h1>Dashboard Administrativo</h1><a href='?logout=1'>Cerrar sesión</a></div>
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard Instituciones</title>
+<style>
+body{font-family:Segoe UI,sans-serif;background:#f8fafc;padding:20px;color:#0f172a}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.box{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:16px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.card{border:1px solid #e2e8f0;border-radius:12px;padding:12px;background:#fff}
+input,select,button{padding:8px;border-radius:8px;border:1px solid #cbd5e1;width:100%;margin:5px 0}
+button{background:#00C9A7;border:none;font-weight:700;color:#0A1628;cursor:pointer}
+.btn-danger{background:#ef4444;color:#fff}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.small{font-size:12px;color:#64748b}
+.actions{display:flex;gap:8px}
+.actions a{display:inline-block;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;text-decoration:none;color:#0f172a}
+</style></head><body>
+<div class='top'><h1>Hub de Instituciones</h1><div><a href='/admin/dashboard.php'>Inicio</a> · <a href='?logout=1'>Cerrar sesión</a></div></div>
+
 <div class='grid'>
-<div class='box'><h3>Institución</h3><form method='post'><input type='hidden' name='action' value='create_institution'><input name='name' placeholder='Nombre institución' required><button>Crear</button></form></div>
-<div class='box'><h3>Proyecto</h3><form method='post'><input type='hidden' name='action' value='create_project'><select name='institution_id' required><?php foreach($institutions as $i): ?><option value='<?= $i['id'] ?>'><?= htmlspecialchars($i['name']) ?></option><?php endforeach; ?></select><input name='name' placeholder='Nombre proyecto' required><button>Crear</button></form></div>
-<div class='box'><h3>Encuesta</h3><form method='post'><input type='hidden' name='action' value='create_survey'><select name='project_id' required><?php foreach($projects as $p): ?><option value='<?= $p['id'] ?>'><?= htmlspecialchars($p['name']) ?></option><?php endforeach; ?></select><input name='name' placeholder='Nombre encuesta' required><button>Crear</button></form></div>
-<div class='box'><h3>Formulario por estamento</h3><form method='post'><input type='hidden' name='action' value='create_form'><select name='survey_id' required><?php foreach($surveys as $s): ?><option value='<?= $s['id'] ?>'><?= htmlspecialchars($s['name']) ?></option><?php endforeach; ?></select><select name='estate'><?php foreach($estates as $e): ?><option><?= $e ?></option><?php endforeach; ?></select><select name='status'><option value='draft'>draft</option><option value='published'>published</option><option value='closed'>closed</option></select><button>Crear</button></form></div>
-<div class='box'><h3>Pregunta Likert</h3><form method='post'><input type='hidden' name='action' value='create_question'><select name='form_id' required><?php foreach($forms as $f): ?><option value='<?= $f['id'] ?>'><?= htmlspecialchars($f['survey_name'].' · '.$f['estate']) ?></option><?php endforeach; ?></select><input name='text' placeholder='Texto pregunta' required><input name='q_order' type='number' value='1' min='1'><button>Crear</button></form></div>
-<div class='box'><h3>Participante</h3><form method='post'><input type='hidden' name='action' value='create_participant'><select name='institution_id' required><?php foreach($institutions as $i): ?><option value='<?= $i['id'] ?>'><?= htmlspecialchars($i['name']) ?></option><?php endforeach; ?></select><select name='project_id' required><?php foreach($projects as $p): ?><option value='<?= $p['id'] ?>'><?= htmlspecialchars($p['name']) ?></option><?php endforeach; ?></select><select name='estate'><?php foreach($estates as $e): ?><option><?= $e ?></option><?php endforeach; ?></select><input name='name' placeholder='Nombre'><input name='email' type='email' placeholder='Correo'><button>Crear</button></form></div>
+  <div class='box'>
+    <h3>Crear institución</h3>
+    <form method='post'>
+      <input type='hidden' name='action' value='create_institution'>
+      <input name='name' placeholder='Nombre institución' required>
+      <div class='row'><input name='code' placeholder='Código interno'><input name='rbd' placeholder='RBD'></div>
+      <div class='row'><input name='region' placeholder='Región'><input name='commune' placeholder='Comuna'></div>
+      <input name='address_line' placeholder='Dirección'>
+      <div class='row'><input name='email' placeholder='Email'><input name='phone' placeholder='Teléfono'></div>
+      <div class='row'><input name='dependency' placeholder='Dependencia'><select name='status'><option value='active'>Activa</option><option value='inactive'>Inactiva</option></select></div>
+      <button>Guardar institución</button>
+    </form>
+  </div>
+
+  <div class='box'>
+    <h3>Instituciones registradas</h3>
+    <div class='cards'>
+      <?php foreach($institutions as $i): ?>
+      <div class='card'>
+        <strong><?= htmlspecialchars((string)$i['name']) ?></strong>
+        <div class='small'><?= htmlspecialchars((string)($i['commune'] ?? '')) ?> · <?= htmlspecialchars((string)($i['region'] ?? '')) ?></div>
+        <div class='small'><?= htmlspecialchars((string)($i['email'] ?? '')) ?></div>
+        <div class='actions' style='margin-top:8px'>
+          <a href='?institution_id=<?= (int)$i['id'] ?>'>Abrir menú</a>
+          <form method='post' onsubmit='return confirm("¿Eliminar institución?")' style='flex:1'>
+            <input type='hidden' name='action' value='delete_institution'>
+            <input type='hidden' name='institution_id' value='<?= (int)$i['id'] ?>'>
+            <button class='btn-danger'>Eliminar</button>
+          </form>
+        </div>
+      </div>
+      <?php endforeach; ?>
+    </div>
+  </div>
 </div>
-<div class='box'><h3>Generar token</h3><form method='post'><input type='hidden' name='action' value='generate_token'><select name='participant_id'><?php foreach($participants as $p): ?><option value='<?= $p['id'] ?>'><?= htmlspecialchars($p['name'].' · '.$p['email']) ?></option><?php endforeach; ?></select><select name='form_id'><?php foreach($forms as $f): ?><option value='<?= $f['id'] ?>'><?= htmlspecialchars($f['survey_name'].' · '.$f['estate']) ?></option><?php endforeach; ?></select><button>Generar</button></form></div>
-<div class='box'><h3>Tokens generados</h3><table><tr><th>Participante</th><th>Estamento</th><th>Link</th><th>Usado</th></tr><?php foreach($tokens as $t): ?><tr><td><?= htmlspecialchars($t['name'].' · '.$t['email']) ?></td><td><?= htmlspecialchars($t['estate']) ?></td><td><a href='/survey/<?= urlencode((string)$t['token']) ?>' target='_blank'>/survey/<?= htmlspecialchars((string)$t['token']) ?></a></td><td><?= $t['used_at'] ? 'Sí' : 'No' ?></td></tr><?php endforeach; ?></table></div>
+
+<?php if($selectedInstitution): ?>
+<div class='box' style='margin-top:16px'>
+  <h2>Menú institución: <?= htmlspecialchars((string)$selectedInstitution['name']) ?></h2>
+  <p class='small'>Edición de ficha institucional + contactos (base para replicar el mockup).</p>
+  <div class='grid'>
+    <div>
+      <h3>Editar ficha</h3>
+      <form method='post'>
+        <input type='hidden' name='action' value='update_institution'>
+        <input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'>
+        <input type='hidden' name='redirect_institution_id' value='<?= (int)$selectedInstitution['id'] ?>'>
+        <input name='name' value='<?= htmlspecialchars((string)$selectedInstitution['name']) ?>' required>
+        <div class='row'><input name='code' value='<?= htmlspecialchars((string)($selectedInstitution['code'] ?? '')) ?>' placeholder='Código'><input name='rbd' value='<?= htmlspecialchars((string)($selectedInstitution['rbd'] ?? '')) ?>' placeholder='RBD'></div>
+        <div class='row'><input name='region' value='<?= htmlspecialchars((string)($selectedInstitution['region'] ?? '')) ?>' placeholder='Región'><input name='commune' value='<?= htmlspecialchars((string)($selectedInstitution['commune'] ?? '')) ?>' placeholder='Comuna'></div>
+        <input name='address_line' value='<?= htmlspecialchars((string)($selectedInstitution['address_line'] ?? '')) ?>' placeholder='Dirección'>
+        <div class='row'><input name='email' value='<?= htmlspecialchars((string)($selectedInstitution['email'] ?? '')) ?>' placeholder='Email'><input name='phone' value='<?= htmlspecialchars((string)($selectedInstitution['phone'] ?? '')) ?>' placeholder='Teléfono'></div>
+        <div class='row'><input name='dependency' value='<?= htmlspecialchars((string)($selectedInstitution['dependency'] ?? '')) ?>' placeholder='Dependencia'><select name='status'><option value='active' <?= (($selectedInstitution['status'] ?? 'active')==='active'?'selected':'') ?>>Activa</option><option value='inactive' <?= (($selectedInstitution['status'] ?? '')==='inactive'?'selected':'') ?>>Inactiva</option></select></div>
+        <button>Actualizar institución</button>
+      </form>
+    </div>
+    <div>
+      <h3>Contactos institución</h3>
+      <form method='post'>
+        <input type='hidden' name='action' value='create_contact'>
+        <input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'>
+        <input type='hidden' name='redirect_institution_id' value='<?= (int)$selectedInstitution['id'] ?>'>
+        <input name='full_name' placeholder='Nombre contacto' required>
+        <input name='role_title' placeholder='Cargo'>
+        <input name='email' placeholder='Email'>
+        <input name='phone' placeholder='Teléfono'>
+        <label><input type='checkbox' name='is_primary' style='width:auto'> Contacto principal</label>
+        <button>Agregar contacto</button>
+      </form>
+      <hr>
+      <?php foreach($contacts as $c): ?>
+      <div class='card'>
+        <strong><?= htmlspecialchars((string)$c['full_name']) ?></strong> <?= (int)$c['is_primary']===1 ? '⭐' : '' ?><br>
+        <span class='small'><?= htmlspecialchars((string)($c['role_title'] ?? '')) ?> · <?= htmlspecialchars((string)($c['email'] ?? '')) ?></span>
+        <form method='post' onsubmit='return confirm("¿Eliminar contacto?")'>
+          <input type='hidden' name='action' value='delete_contact'>
+          <input type='hidden' name='contact_id' value='<?= (int)$c['id'] ?>'>
+          <input type='hidden' name='redirect_institution_id' value='<?= (int)$selectedInstitution['id'] ?>'>
+          <button class='btn-danger'>Eliminar contacto</button>
+        </form>
+      </div>
+      <?php endforeach; ?>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
 </body></html>

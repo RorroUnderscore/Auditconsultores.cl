@@ -48,6 +48,11 @@ function db(): PDO {
     return $pdo;
 }
 
+
+function safeExec(PDO $pdo, string $sql): void {
+    try { $pdo->exec($sql); } catch (Throwable $e) { /* noop para compatibilidad */ }
+}
+
 function migrate(PDO $pdo): void {
     $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
     $idCol = $driver === 'mysql' ? 'INT AUTO_INCREMENT PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT';
@@ -56,6 +61,17 @@ function migrate(PDO $pdo): void {
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS admins (id $idCol, email $text UNIQUE, password_hash $text NOT NULL)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS institutions (id $idCol, name $text NOT NULL)");
+    safeExec($pdo, "ALTER TABLE institutions ADD COLUMN code $text NULL");
+    safeExec($pdo, "ALTER TABLE institutions ADD COLUMN rbd $text NULL");
+    safeExec($pdo, "ALTER TABLE institutions ADD COLUMN dependency $text NULL");
+    safeExec($pdo, "ALTER TABLE institutions ADD COLUMN region $text NULL");
+    safeExec($pdo, "ALTER TABLE institutions ADD COLUMN commune $text NULL");
+    safeExec($pdo, "ALTER TABLE institutions ADD COLUMN address_line $text NULL");
+    safeExec($pdo, "ALTER TABLE institutions ADD COLUMN phone $text NULL");
+    safeExec($pdo, "ALTER TABLE institutions ADD COLUMN email $text NULL");
+    safeExec($pdo, "ALTER TABLE institutions ADD COLUMN status $text NOT NULL DEFAULT 'active'");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS institution_contacts (id $idCol, institution_id INT NOT NULL, full_name $text NOT NULL, role_title $text NULL, email $text NULL, phone $text NULL, is_primary TINYINT NOT NULL DEFAULT 0, FOREIGN KEY(institution_id) REFERENCES institutions(id) ON DELETE CASCADE)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS projects (id $idCol, institution_id INT NOT NULL, name $text NOT NULL, FOREIGN KEY(institution_id) REFERENCES institutions(id))");
     $pdo->exec("CREATE TABLE IF NOT EXISTS surveys (id $idCol, project_id INT NOT NULL, name $text NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id))");
     $pdo->exec("CREATE TABLE IF NOT EXISTS forms (id $idCol, survey_id INT NOT NULL, estate $text NOT NULL, status $text NOT NULL DEFAULT 'draft', FOREIGN KEY(survey_id) REFERENCES surveys(id))");
