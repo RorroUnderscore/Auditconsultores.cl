@@ -1,17 +1,28 @@
 <?php declare(strict_types=1);
 
+function appConfig(): array {
+    static $cfg = null;
+    if (is_array($cfg)) return $cfg;
+    $file = __DIR__ . '/../config/app.php';
+    $cfg = is_file($file) ? require $file : [];
+    return is_array($cfg) ? $cfg : [];
+}
+
 function db(): PDO {
     static $pdo = null;
     if ($pdo instanceof PDO) return $pdo;
 
-    $driver = getenv('DB_CONNECTION') ?: 'sqlite';
+    $cfg = appConfig();
+    $dbCfg = $cfg['db'] ?? [];
+
+    $driver = $dbCfg['connection'] ?? (getenv('DB_CONNECTION') ?: 'sqlite');
 
     if ($driver === 'mysql') {
-        $host = getenv('DB_HOST') ?: 'localhost';
-        $port = getenv('DB_PORT') ?: '3306';
-        $name = getenv('DB_DATABASE') ?: '';
-        $user = getenv('DB_USERNAME') ?: '';
-        $pass = getenv('DB_PASSWORD') ?: '';
+        $host = $dbCfg['host'] ?? (getenv('DB_HOST') ?: 'localhost');
+        $port = (string)($dbCfg['port'] ?? (getenv('DB_PORT') ?: '3306'));
+        $name = $dbCfg['database'] ?? (getenv('DB_DATABASE') ?: '');
+        $user = $dbCfg['username'] ?? (getenv('DB_USERNAME') ?: '');
+        $pass = $dbCfg['password'] ?? (getenv('DB_PASSWORD') ?: '');
         if ($name === '' || $user === '') {
             throw new RuntimeException('Faltan DB_DATABASE o DB_USERNAME para conexión MySQL.');
         }
@@ -51,8 +62,10 @@ function migrate(PDO $pdo): void {
 }
 
 function seedDefaultAdmin(PDO $pdo): void {
-    $adminEmail = getenv('ADMIN_DEFAULT_EMAIL') ?: 'admin@auditconsultores.cl';
-    $adminPassword = getenv('ADMIN_DEFAULT_PASSWORD') ?: 'admin1234';
+    $cfg = appConfig();
+    $seedCfg = $cfg['admin_seed'] ?? [];
+    $adminEmail = $seedCfg['email'] ?? (getenv('ADMIN_DEFAULT_EMAIL') ?: 'admin@auditconsultores.cl');
+    $adminPassword = $seedCfg['password'] ?? (getenv('ADMIN_DEFAULT_PASSWORD') ?: 'admin1234');
 
     $stmt = $pdo->prepare('SELECT COUNT(*) FROM admins WHERE email = ?');
     $stmt->execute([$adminEmail]);
