@@ -65,7 +65,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   $redirect = '/admin/dashboard.php';
-  if (!empty($_POST['institution_id'])) $redirect .= '?institution_id=' . (int)$_POST['institution_id'] . '&tab=' . urlencode((string)($_POST['tab'] ?? 'datos'));
+  if (!empty($_POST['institution_id'])) {
+    $redirect .= '?institution_id=' . (int)$_POST['institution_id'] . '&tab=' . urlencode((string)($_POST['tab'] ?? 'datos'));
+    if (!empty($_POST['tpl'])) $redirect .= '&tpl=' . urlencode((string)$_POST['tpl']);
+  }
   header('Location: ' . $redirect);
   exit;
 }
@@ -129,7 +132,7 @@ function resolveProjectId(PDO $pdo, int $institutionId): int {
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden}.card h3{margin:0;padding:16px 18px;border-bottom:1px solid #edf0f5}.card-body{padding:16px}
 input,select,textarea,button{font:inherit}input,select,textarea{width:100%;padding:11px;border:1px solid #d7dce6;border-radius:11px;background:#fff;margin-top:6px}label{font-weight:600;color:#556277}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px}.btn{background:#4f46e5;color:#fff;border:none;padding:11px 16px;border-radius:12px;cursor:pointer;font-weight:700}.btn.gray{background:#eef0f5;color:#374151}.btn.danger{background:#ef4444}
-.chips{display:flex;gap:8px;flex-wrap:wrap}.chip{padding:8px 12px;border:1px solid #d7dce6;border-radius:999px;background:#f3f4f6;color:#4b5563}.chip.active{background:#1da0e7;color:#fff;border-color:#1da0e7}
+.chips{display:flex;gap:8px;flex-wrap:wrap}.chip{padding:8px 12px;border:1px solid #d7dce6;border-radius:999px;background:#f3f4f6;color:#4b5563;text-decoration:none}.chip.active{background:#1da0e7;color:#fff;border-color:#1da0e7}.status-pill{display:inline-block;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;color:#fff}.status-pill.ok{background:#16a34a}.status-pill.no{background:#ef4444}
 table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #e6e9f0;text-align:left}.empty{border:2px dashed #d8dde8;border-radius:12px;padding:30px;text-align:center;color:#94a3b8}
 .alert{padding:12px;border-radius:10px;background:#fef2f2;color:#991b1b;border:1px solid #fecaca;margin:12px 0}
 </style></head><body>
@@ -190,7 +193,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         <a class='chip <?= $currentTpl==='amigable'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=comunicaciones&tpl=amigable'>Amigable</a>
         <a class='chip <?= $currentTpl==='recordatorio'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=comunicaciones&tpl=recordatorio'>Recordatorio</a>
       </div>
-      <p style='margin-top:10px;color:#64748b'>Correo emisor previsto: <strong>infodiagnosticos@auditconsultores.cl</strong>. Variables: [NOMBRE], [INSTITUCION], [LINK]. Estado: <strong><?= $isApproved ? 'Aprobado' : 'No aprobado' ?></strong>.</p>
+      <div style='margin-top:10px;display:flex;align-items:center;gap:10px'><span class='status-pill <?= $isApproved ? 'ok' : 'no' ?>'><?= $isApproved ? 'Aprobado' : 'No Aprobado' ?></span></div>
     </div></section>
 
     <section class='card' style='margin-top:14px'><h3>Carta de Invitación · <?= ucfirst($currentTpl) ?></h3><div class='card-body'>
