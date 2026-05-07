@@ -80,7 +80,9 @@ function migrate(PDO $pdo): void {
     safeExec($pdo, "ALTER TABLE participants ADD COLUMN email_delivery_status $text NOT NULL DEFAULT 'pending'");
     safeExec($pdo, "ALTER TABLE participants ADD COLUMN email_sent_at $text NULL");
     safeExec($pdo, "ALTER TABLE participants ADD COLUMN reminder_sent_at $text NULL");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS communication_templates (id $idCol, institution_id INT NOT NULL, template_type $text NOT NULL, subject $text NOT NULL, body $longText NOT NULL, updated_at $text NOT NULL, UNIQUE(institution_id, template_type), FOREIGN KEY(institution_id) REFERENCES institutions(id) ON DELETE CASCADE)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS communication_templates (id $idCol, institution_id INT NOT NULL, template_type $text NOT NULL, subject $text NOT NULL, body $longText NOT NULL, updated_at $text NOT NULL, is_approved TINYINT NOT NULL DEFAULT 0, approved_at $text NULL, UNIQUE(institution_id, template_type), FOREIGN KEY(institution_id) REFERENCES institutions(id) ON DELETE CASCADE)");
+    safeExec($pdo, "ALTER TABLE communication_templates ADD COLUMN is_approved TINYINT NOT NULL DEFAULT 0");
+    safeExec($pdo, "ALTER TABLE communication_templates ADD COLUMN approved_at $text NULL");
 $pdo->exec("CREATE TABLE IF NOT EXISTS invitation_tokens (id $idCol, participant_id INT NOT NULL, form_id INT NOT NULL, token $text UNIQUE NOT NULL, used_at $text NULL, FOREIGN KEY(participant_id) REFERENCES participants(id), FOREIGN KEY(form_id) REFERENCES forms(id))");
     $pdo->exec("CREATE TABLE IF NOT EXISTS responses (id $idCol, token_id INT NOT NULL, submitted_at $text NOT NULL, FOREIGN KEY(token_id) REFERENCES invitation_tokens(id))");
     $pdo->exec("CREATE TABLE IF NOT EXISTS response_answers (id $idCol, response_id INT NOT NULL, question_id INT NOT NULL, value INT NOT NULL, FOREIGN KEY(response_id) REFERENCES responses(id), FOREIGN KEY(question_id) REFERENCES questions(id))");
