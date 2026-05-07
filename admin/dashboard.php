@@ -1,6 +1,7 @@
 <?php declare(strict_types=1);
 session_start();
 require_once __DIR__ . '/../lib/db.php';
+require_once __DIR__ . '/../lib/mailer.php';
 if (!isset($_SESSION['admin_id'])) { header('Location: /admin'); exit; }
 $pdo = db();
 
@@ -43,11 +44,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'delete_participant') {
       $pdo->prepare('DELETE FROM participants WHERE id=?')->execute([(int)$_POST['participant_id']]);
     } elseif ($action === 'send_email') {
-      $pdo->prepare("UPDATE participants SET email_delivery_status='sent', email_sent_at=? WHERE id=?")->execute([date('c'), (int)$_POST['participant_id']]);
+      $participantId = (int)$_POST['participant_id'];
+      if (dispatchParticipantEmail($pdo, $participantId, 'formal')) {
+        $pdo->prepare("UPDATE participants SET email_delivery_status='sent', email_sent_at=? WHERE id=?")->execute([date('c'), $participantId]);
+      } else { throw new RuntimeException('No se pudo enviar correo'); }
     } elseif ($action === 'resend_email') {
-      $pdo->prepare("UPDATE participants SET email_delivery_status='sent', email_sent_at=? WHERE id=?")->execute([date('c'), (int)$_POST['participant_id']]);
+      $participantId = (int)$_POST['participant_id'];
+      if (dispatchParticipantEmail($pdo, $participantId, 'formal')) {
+        $pdo->prepare("UPDATE participants SET email_delivery_status='sent', email_sent_at=? WHERE id=?")->execute([date('c'), $participantId]);
+      } else { throw new RuntimeException('No se pudo reenviar correo'); }
     } elseif ($action === 'send_reminder') {
-      $pdo->prepare("UPDATE participants SET email_delivery_status='reminded', reminder_sent_at=? WHERE id=?")->execute([date('c'), (int)$_POST['participant_id']]);
+      $participantId = (int)$_POST['participant_id'];
+      if (dispatchParticipantEmail($pdo, $participantId, 'recordatorio')) {
+        $pdo->prepare("UPDATE participants SET email_delivery_status='reminded', reminder_sent_at=? WHERE id=?")->execute([date('c'), $participantId]);
+      } else { throw new RuntimeException('No se pudo enviar recordatorio'); }
+    } elseif ($action === 'send_pending_bulk') {
+      $institutionId=(int)$_POST['institution_id'];
+      $estate=(string)$_POST['estate'];
+      $q=$pdo->prepare("SELECT id FROM participants WHERE institution_id=? AND estate=? AND (email_delivery_status IS NULL OR email_delivery_status='pending')");
+      $q->execute([$institutionId,$estate]);
+      foreach($q->fetchAll(PDO::FETCH_COLUMN) as $pid){
+        $pid=(int)$pid;
+        if (dispatchParticipantEmail($pdo, $pid, 'formal')) {
+          $pdo->prepare("UPDATE participants SET email_delivery_status='sent', email_sent_at=? WHERE id=?")->execute([date('c'), $pid]);
+        }
+      }
     } elseif ($action === 'save_template') {
       $institutionId = (int)$_POST['institution_id'];
       $type = (string)$_POST['template_type'];
@@ -115,6 +136,27 @@ if ($selectedInstitutionId > 0) {
       $templates[$tpl['template_type']] = ['subject'=>(string)$tpl['subject'], 'body'=>(string)$tpl['body'], 'is_approved'=>(int)($tpl['is_approved'] ?? 0)];
     }
   }
+}
+
+
+function dispatchParticipantEmail(PDO $pdo, int $participantId, string $templateType): bool {
+  $stmt = $pdo->prepare('SELECT p.*, i.name AS institution_name FROM participants p JOIN institutions i ON i.id=p.institution_id WHERE p.id=? LIMIT 1');
+  $stmt->execute([$participantId]);
+  $p = $stmt->fetch(PDO::FETCH_ASSOC);
+  if (!$p || empty($p['email'])) return false;
+
+  $tplStmt = $pdo->prepare('SELECT subject, body, is_approved FROM communication_templates WHERE institution_id=? AND template_type=? LIMIT 1');
+  $tplStmt->execute([(int)$p['institution_id'], $templateType]);
+  $tpl = $tplStmt->fetch(PDO::FETCH_ASSOC);
+  if (!$tpl) return false;
+  if ((int)($tpl['is_approved'] ?? 0) !== 1) return false;
+
+  $link = 'https://auditconsultores.cl/survey/proximamente';
+  $fullName = trim(((string)($p['name'] ?? '')) . ' ' . ((string)($p['last_name'] ?? '')));
+  $vars = ['[NOMBRE]' => $fullName !== '' ? $fullName : 'Participante', '[INSTITUCION]' => (string)($p['institution_name'] ?? ''), '[LINK]' => $link];
+  $subject = renderTemplateText((string)$tpl['subject'], $vars);
+  $body = renderTemplateText((string)$tpl['body'], $vars);
+  return sendMailFromDiagnosticos((string)$p['email'], $subject, $body);
 }
 
 function activeTab(string $tab, string $current): string { return $tab === $current ? 'nav-item active' : 'nav-item'; }
@@ -197,7 +239,12 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
       <div class='chips' style='margin-bottom:10px'>
         <?php foreach($estates as $e): ?><a class='chip <?= $estateFilter===$e?'active':'' ?>' style='<?= $estateFilter===$e?'background:'.$colors[$e].';border-color:'.$colors[$e].';color:#fff;':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($e) ?>'><?= $e ?> (<?= (int)$participantCounts[$e] ?>)</a><?php endforeach; ?>
       </div>
-      <div style='display:flex;justify-content:flex-end;margin-bottom:10px'><a class='btn' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($estateFilter) ?>&add=1'>+ Agregar</a></div>
+      <div style='display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px'>
+        <form method='post'>
+          <input type='hidden' name='action' value='send_pending_bulk'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
+          <button class='btn gray'>Enviar pendientes</button>
+        </form>
+        <a class='btn' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($estateFilter) ?>&add=1'>+ Agregar</a></div>
       <table>
         <thead><tr><th>Nombre</th><th>Apellido</th><th>Mail</th><th>Estado correo</th><th>Estado cuestionario</th><th>Acciones</th></tr></thead>
         <tbody>
