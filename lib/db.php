@@ -77,6 +77,8 @@ function migrate(PDO $pdo): void {
     $pdo->exec("CREATE TABLE IF NOT EXISTS forms (id $idCol, survey_id INT NOT NULL, estate $text NOT NULL, status $text NOT NULL DEFAULT 'draft', FOREIGN KEY(survey_id) REFERENCES surveys(id))");
     $pdo->exec("CREATE TABLE IF NOT EXISTS questions (id $idCol, form_id INT NOT NULL, text $longText NOT NULL, q_order INT NOT NULL DEFAULT 1, required TINYINT NOT NULL DEFAULT 1, FOREIGN KEY(form_id) REFERENCES forms(id))");
     $pdo->exec("CREATE TABLE IF NOT EXISTS participants (id $idCol, institution_id INT NOT NULL, project_id INT NOT NULL, estate $text NOT NULL, name $text NOT NULL, email $text NOT NULL, FOREIGN KEY(institution_id) REFERENCES institutions(id), FOREIGN KEY(project_id) REFERENCES projects(id))");
+    safeExec($pdo, "ALTER TABLE participants ADD COLUMN last_name $text NULL");
+    safeExec($pdo, "ALTER TABLE participants ADD COLUMN responded_at $text NULL");
     safeExec($pdo, "ALTER TABLE participants ADD COLUMN email_delivery_status $text NOT NULL DEFAULT 'pending'");
     safeExec($pdo, "ALTER TABLE participants ADD COLUMN email_sent_at $text NULL");
     safeExec($pdo, "ALTER TABLE participants ADD COLUMN reminder_sent_at $text NULL");

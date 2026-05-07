@@ -9,6 +9,8 @@ if (isset($_GET['logout'])) { session_destroy(); header('Location: /admin'); exi
 $estates = ['Directivos','Docentes','Apoderados','Paradocentes'];
 $tab = (string)($_GET['tab'] ?? 'datos');
 $activeTemplate = (string)($_GET['tpl'] ?? 'formal');
+$estateFilter = (string)($_GET['estate'] ?? 'Directivos');
+$addMode = isset($_GET['add']) ? (int)$_GET['add'] === 1 : false;
 $selectedInstitutionId = isset($_GET['institution_id']) ? (int)$_GET['institution_id'] : 0;
 $flashError = $_SESSION['flash_error'] ?? '';
 unset($_SESSION['flash_error']);
@@ -33,14 +35,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         (int)$_POST['institution_id'], trim((string)$_POST['full_name']), trim((string)$_POST['role_title']), trim((string)$_POST['email']), trim((string)$_POST['phone']), isset($_POST['is_primary']) ? 1 : 0
       ]);
     } elseif ($action === 'create_participant') {
-      $fullName = trim((string)$_POST['full_name']);
       $institutionId = (int)$_POST['institution_id'];
       $projectId = resolveProjectId($pdo, $institutionId);
-      $pdo->prepare('INSERT INTO participants(institution_id, project_id, estate, name, email) VALUES (?,?,?,?,?)')->execute([
-        $institutionId, $projectId, (string)$_POST['estate'], $fullName, trim((string)$_POST['email'])
+      $pdo->prepare('INSERT INTO participants(institution_id, project_id, estate, name, last_name, email) VALUES (?,?,?,?,?,?)')->execute([
+        $institutionId, $projectId, (string)$_POST['estate'], trim((string)$_POST['name']), trim((string)$_POST['last_name']), trim((string)$_POST['email'])
       ]);
     } elseif ($action === 'delete_participant') {
       $pdo->prepare('DELETE FROM participants WHERE id=?')->execute([(int)$_POST['participant_id']]);
+    } elseif ($action === 'send_email') {
+      $pdo->prepare("UPDATE participants SET email_delivery_status='sent', email_sent_at=? WHERE id=?")->execute([date('c'), (int)$_POST['participant_id']]);
+    } elseif ($action === 'resend_email') {
+      $pdo->prepare("UPDATE participants SET email_delivery_status='sent', email_sent_at=? WHERE id=?")->execute([date('c'), (int)$_POST['participant_id']]);
+    } elseif ($action === 'send_reminder') {
+      $pdo->prepare("UPDATE participants SET email_delivery_status='reminded', reminder_sent_at=? WHERE id=?")->execute([date('c'), (int)$_POST['participant_id']]);
     } elseif ($action === 'save_template') {
       $institutionId = (int)$_POST['institution_id'];
       $type = (string)$_POST['template_type'];
@@ -68,6 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!empty($_POST['institution_id'])) {
     $redirect .= '?institution_id=' . (int)$_POST['institution_id'] . '&tab=' . urlencode((string)($_POST['tab'] ?? 'datos'));
     if (!empty($_POST['tpl'])) $redirect .= '&tpl=' . urlencode((string)$_POST['tpl']);
+    if (!empty($_POST['estate'])) $redirect .= '&estate=' . urlencode((string)$_POST['estate']);
   }
   header('Location: ' . $redirect);
   exit;
@@ -97,8 +105,9 @@ if ($selectedInstitutionId > 0) {
 
     $pStmt = $pdo->prepare('SELECT * FROM participants WHERE institution_id=? ORDER BY estate, id DESC');
     $pStmt->execute([$selectedInstitutionId]);
-    $participants = $pStmt->fetchAll(PDO::FETCH_ASSOC);
-    foreach ($participants as $p) { if(isset($participantCounts[$p['estate']])) $participantCounts[$p['estate']]++; }
+    $allParticipants = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($allParticipants as $p) { if(isset($participantCounts[$p['estate']])) $participantCounts[$p['estate']]++; }
+    $participants = array_values(array_filter($allParticipants, fn($p) => ($p['estate'] ?? '') === $estateFilter));
 
     $tStmt = $pdo->prepare('SELECT template_type, subject, body, is_approved FROM communication_templates WHERE institution_id=?');
     $tStmt->execute([$selectedInstitutionId]);
@@ -182,8 +191,56 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
   <?php if($tab==='datos'): ?>
     <section class='card' style='margin-top:16px'><h3>Datos de la Institución</h3><div class='card-body'><form method='post'><input type='hidden' name='action' value='update_institution'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='datos'><div class='row'><div><label>Nombre</label><input name='name' value='<?= htmlspecialchars((string)$selectedInstitution['name']) ?>'></div><div><label>Calle</label><input name='address_line' value='<?= htmlspecialchars((string)($selectedInstitution['address_line']??'')) ?>'></div></div><div class='row'><div><label>Comuna</label><input name='commune' value='<?= htmlspecialchars((string)($selectedInstitution['commune']??'')) ?>'></div><div><label>Región</label><input name='region' value='<?= htmlspecialchars((string)($selectedInstitution['region']??'')) ?>'></div></div><div class='row'><div><label>Email</label><input name='email' value='<?= htmlspecialchars((string)($selectedInstitution['email']??'')) ?>'></div><div><label>Teléfono</label><input name='phone' value='<?= htmlspecialchars((string)($selectedInstitution['phone']??'')) ?>'></div></div><button class='btn'>Guardar</button></form></div></section>
   <?php elseif($tab==='cuestionarios'): ?><section class='card' style='margin-top:16px'><h3>Cuestionarios</h3><div class='card-body'><div class='empty'>Sección temporalmente vacía. Aquí haremos cambios del constructor.</div></div></section>
-  <?php elseif($tab==='participantes'): ?><section class='card' style='margin-top:16px'><h3>Participantes</h3><div class='card-body'><div class='chips'><?php foreach($estates as $e): ?><span class='chip'><?= $e ?> (<?= (int)$participantCounts[$e] ?>)</span><?php endforeach; ?></div><form method='post' style='margin-top:10px'><input type='hidden' name='action' value='create_participant'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><div class='row'><div><label>Nombre</label><input name='full_name' required></div><div><label>Email</label><input name='email' required></div></div><label>Estamento</label><select name='estate'><?php foreach($estates as $e): ?><option><?= $e ?></option><?php endforeach; ?></select><button class='btn'>+ Agregar</button></form><table><thead><tr><th>Nombre</th><th>Mail</th><th>Estamento</th><th>Acciones</th></tr></thead><tbody><?php foreach($participants as $p): ?><tr><td><?= htmlspecialchars((string)$p['name']) ?></td><td><?= htmlspecialchars((string)$p['email']) ?></td><td><?= htmlspecialchars((string)$p['estate']) ?></td><td><form method='post'><input type='hidden' name='action' value='delete_participant'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><button class='btn danger'>Eliminar</button></form></td></tr><?php endforeach; ?></tbody></table></div></section>
+  <?php elseif($tab==='participantes'): ?>
+    <?php $colors=['Directivos'=>'#4f46e5','Docentes'=>'#0ea5e9','Apoderados'=>'#10b981','Paradocentes'=>'#f59e0b']; ?>
+    <section class='card' style='margin-top:16px'><h3>Participantes - <?= htmlspecialchars($estateFilter) ?></h3><div class='card-body'>
+      <div class='chips' style='margin-bottom:10px'>
+        <?php foreach($estates as $e): ?><a class='chip <?= $estateFilter===$e?'active':'' ?>' style='<?= $estateFilter===$e?'background:'.$colors[$e].';border-color:'.$colors[$e].';color:#fff;':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($e) ?>'><?= $e ?> (<?= (int)$participantCounts[$e] ?>)</a><?php endforeach; ?>
+      </div>
+      <div style='display:flex;justify-content:flex-end;margin-bottom:10px'><a class='btn' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($estateFilter) ?>&add=1'>+ Agregar</a></div>
+      <table>
+        <thead><tr><th>Nombre</th><th>Apellido</th><th>Mail</th><th>Estado correo</th><th>Estado cuestionario</th><th>Acciones</th></tr></thead>
+        <tbody>
+          <?php foreach($participants as $p): ?>
+          <tr>
+            <td><?= htmlspecialchars((string)$p['name']) ?></td>
+            <td><?= htmlspecialchars((string)($p['last_name'] ?? '')) ?></td>
+            <td><?= htmlspecialchars((string)$p['email']) ?></td>
+            <td><?= (($p['email_delivery_status'] ?? 'pending')==='pending'?'No enviado':(($p['email_delivery_status']??'')==='sent'?'Enviado':'Recordatorio enviado')) ?></td>
+            <td><?= !empty($p['responded_at']) ? 'Contestado' : 'No contestado' ?></td>
+            <td>
+              <div style='display:flex;gap:6px;flex-wrap:wrap'>
+                <form method='post'><input type='hidden' name='action' value='send_email'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><button class='btn gray'>Enviar</button></form>
+                <form method='post'><input type='hidden' name='action' value='resend_email'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><button class='btn gray'>Reenviar</button></form>
+                <form method='post'><input type='hidden' name='action' value='send_reminder'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><button class='btn gray'>Recordatorio</button></form>
+                <form method='post' onsubmit='return confirm("¿Eliminar?")'><input type='hidden' name='action' value='delete_participant'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><button class='btn danger'>Eliminar</button></form>
+              </div>
+            </td>
+          </tr>
+          <?php endforeach; ?>
+          <?php if($addMode): ?>
+          <tr>
+            <form method='post'>
+              <td><input name='name' placeholder='Nombre' required></td>
+              <td><input name='last_name' placeholder='Apellido' required></td>
+              <td><input name='email' placeholder='mail@cl' required></td>
+              <td>—</td><td>—</td>
+              <td>
+                <input type='hidden' name='action' value='create_participant'>
+                <input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'>
+                <input type='hidden' name='tab' value='participantes'>
+                <input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
+                <button class='btn'>OK</button>
+                <a class='btn gray' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($estateFilter) ?>'>X</a>
+              </td>
+            </form>
+          </tr>
+          <?php endif; ?>
+        </tbody>
+      </table>
+    </div></section>
   <?php elseif($tab==='comunicaciones'): ?>
+
     <?php $currentTpl = in_array($activeTemplate, ['formal','amigable','recordatorio'], true) ? $activeTemplate : 'formal';
           $tplData = $templates[$currentTpl] ?? ['subject'=>'','body'=>'','is_approved'=>0];
           $isApproved = (int)($tplData['is_approved'] ?? 0) === 1; ?>
