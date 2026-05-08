@@ -164,6 +164,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]]];
     } elseif ($action === 'qtpl_delete_template') {
       $pdo->prepare('DELETE FROM questionnaire_templates WHERE id=?')->execute([(int)$_POST['template_id']]);
+    } elseif ($action === 'export_results_excel') {
+      $institutionId = (int)$_POST['institution_id'];
+      exportResultsExcel($pdo, $institutionId);
+      exit;
     }
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
@@ -299,6 +303,34 @@ function ensureFormForEstate(PDO $pdo, int $surveyId, string $estate): int {
   if ($id) return (int)$id;
   $pdo->prepare("INSERT INTO forms(survey_id,estate,status) VALUES (?,?, 'published')")->execute([$surveyId, $estate]);
   return (int)$pdo->lastInsertId();
+}
+
+function xmlCell(string $value): string { return '<Cell><Data ss:Type="String">' . htmlspecialchars($value, ENT_XML1) . '</Data></Cell>'; }
+
+function exportResultsExcel(PDO $pdo, int $institutionId): void {
+  $inst = $pdo->prepare('SELECT * FROM institutions WHERE id=?'); $inst->execute([$institutionId]); $institution = $inst->fetch(PDO::FETCH_ASSOC) ?: ['name'=>'Institución'];
+  $projectId = resolveProjectId($pdo, $institutionId);
+  $participantsStmt = $pdo->prepare("SELECT p.*, EXISTS(SELECT 1 FROM invitation_tokens t WHERE t.participant_id=p.id AND t.used_at IS NOT NULL) has_used_token FROM participants p WHERE p.institution_id=? ORDER BY p.estate, p.last_name, p.name");
+  $participantsStmt->execute([$institutionId]); $participants = $participantsStmt->fetchAll(PDO::FETCH_ASSOC);
+  $estates = ['Directivos','Docentes','Apoderados','Paradocentes'];
+  $xml = '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
+  $xml .= '<Worksheet ss:Name="Resumen"><Table><Row>'.xmlCell('Proyecto').xmlCell((string)$projectId).'</Row><Row>'.xmlCell('Institución').xmlCell((string)$institution['name']).'</Row><Row>'.xmlCell('Exportado').xmlCell(date('c')).'</Row><Row>'.xmlCell('Participantes').xmlCell((string)count($participants)).'</Row></Table></Worksheet>';
+  foreach($estates as $estate){ $xml .= '<Worksheet ss:Name="'.htmlspecialchars($estate, ENT_XML1).'"><Table>';
+    $questions = $pdo->prepare("SELECT qq.id, qq.question_text FROM questionnaire_questions qq JOIN questionnaires q ON q.id=qq.questionnaire_id WHERE q.institution_id=? AND q.project_id=? AND qq.estate=? ORDER BY qq.q_order, qq.id");
+    $questions->execute([$institutionId, $projectId, $estate]); $qRows = $questions->fetchAll(PDO::FETCH_ASSOC);
+    foreach($qRows as $idx=>$q){ $xml .= '<Row>'.xmlCell('Pregunta '.($idx+1)).xmlCell((string)$q['question_text']).'</Row><Row>'.xmlCell('Participante').xmlCell('Correo').xmlCell('Respuesta').'</Row>';
+      $ans = $pdo->prepare("SELECT p.name,p.last_name,p.email,qra.value FROM questionnaire_response_answers qra JOIN responses r ON r.id=qra.response_id JOIN invitation_tokens t ON t.id=r.token_id JOIN participants p ON p.id=t.participant_id WHERE qra.questionnaire_question_id=? ORDER BY p.last_name,p.name");
+      $ans->execute([(int)$q['id']]); $counts=[1=>0,2=>0,3=>0,4=>0,5=>0];
+      foreach($ans->fetchAll(PDO::FETCH_ASSOC) as $a){ $v=(int)$a['value']; if(isset($counts[$v]))$counts[$v]++; $xml.='<Row>'.xmlCell(trim(($a['name']??'').' '.($a['last_name']??''))).xmlCell((string)$a['email']).xmlCell((string)$v).'</Row>'; }
+      $xml .= '<Row>'.xmlCell('Resumen').xmlCell('1').xmlCell((string)$counts[1]).xmlCell('2').xmlCell((string)$counts[2]).xmlCell('3').xmlCell((string)$counts[3]).xmlCell('4').xmlCell((string)$counts[4]).xmlCell('5').xmlCell((string)$counts[5]).'</Row><Row></Row>'; }
+    $comments = $pdo->prepare("SELECT r.comment FROM responses r JOIN questionnaires q ON q.id=r.questionnaire_id WHERE q.institution_id=? AND q.project_id=? AND r.estate=? AND r.comment IS NOT NULL AND TRIM(r.comment)<>''");
+    $comments->execute([$institutionId,$projectId,$estate]); $cRows=$comments->fetchAll(PDO::FETCH_COLUMN);
+    if ($cRows){ $xml .= '<Row>'.xmlCell('Comentarios').'</Row>'; foreach($cRows as $c){ $xml .= '<Row>'.xmlCell((string)$c).'</Row>'; } }
+    $xml .= '</Table></Worksheet>'; }
+  $xml .= '<Worksheet ss:Name="Participantes"><Table><Row>'.xmlCell('Estamento').xmlCell('Nombre').xmlCell('Apellido').xmlCell('Mail').xmlCell('Estado cuestionario').'</Row>';
+  foreach($participants as $p){ $status=(!empty($p['responded_at']) || (int)$p['has_used_token']===1)?'Contestado':'No contestado'; $xml.='<Row>'.xmlCell((string)$p['estate']).xmlCell((string)$p['name']).xmlCell((string)($p['last_name']??'')).xmlCell((string)$p['email']).xmlCell($status).'</Row>'; }
+  $xml .= '</Table></Worksheet></Workbook>';
+  header('Content-Type: application/vnd.ms-excel'); header('Content-Disposition: attachment; filename="resultados_'.$institutionId.'_'.date('Ymd_His').'.xls"'); echo $xml;
 }
 
 function activeTab(string $tab, string $current): string { return $tab === $current ? 'nav-item active' : 'nav-item'; }
@@ -633,7 +665,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         <a class='chip <?= $resultView==='db'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=resultados&rview=db&rest=<?= urlencode($resultEstate) ?>'>Base de datos</a>
       </div>
       <?php if($resultView==='db'): ?>
-        <div style='margin-top:16px'><button class='btn gray' type='button'>Exportar Excel</button></div>
+        <div style='margin-top:16px'><form method='post'><input type='hidden' name='action' value='export_results_excel'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><button class='btn gray' type='submit'>Exportar Excel</button></form></div>
       <?php else: ?>
         <div class='chips' style='margin:14px 0'><?php foreach($estates as $e): ?><a class='chip <?= $resultEstate===$e?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=resultados&rview=charts&rest=<?= urlencode($e) ?>'><?= $e ?></a><?php endforeach; ?></div>
         <?php if(empty($responsesByQuestion)): ?><div class='empty'>Aún no hay respuestas para <?= htmlspecialchars($resultEstate) ?>.</div>
