@@ -312,7 +312,13 @@ function exportResultsExcel(PDO $pdo, int $institutionId): void {
   $projectId = resolveProjectId($pdo, $institutionId);
   $participantsStmt = $pdo->prepare("SELECT p.*, EXISTS(SELECT 1 FROM invitation_tokens t WHERE t.participant_id=p.id AND t.used_at IS NOT NULL) has_used_token FROM participants p WHERE p.institution_id=? ORDER BY p.estate, p.last_name, p.name");
   $participantsStmt->execute([$institutionId]); $participants = $participantsStmt->fetchAll(PDO::FETCH_ASSOC);
-  $qSel = $pdo->prepare("SELECT id, name, status, updated_at FROM questionnaires WHERE institution_id=? AND project_id=? ORDER BY (status='published') DESC, id DESC LIMIT 1");
+  $qSel = $pdo->prepare("SELECT q.id, q.name, q.status, q.updated_at, COUNT(r.id) AS resp_count
+    FROM questionnaires q
+    LEFT JOIN responses r ON r.questionnaire_id=q.id
+    WHERE q.institution_id=? AND q.project_id=?
+    GROUP BY q.id, q.name, q.status, q.updated_at
+    ORDER BY (q.status='published') DESC, resp_count DESC, q.id DESC
+    LIMIT 1");
   $qSel->execute([$institutionId, $projectId]); $activeQ = $qSel->fetch(PDO::FETCH_ASSOC);
   $qid = (int)($activeQ['id'] ?? 0);
   $estates = ['Directivos','Docentes','Apoderados','Paradocentes'];
@@ -339,7 +345,7 @@ function exportResultsExcel(PDO $pdo, int $institutionId): void {
   $xml .= '<Worksheet ss:Name="Participantes"><Table><Row><Cell ss:StyleID="th"><Data ss:Type="String">Estamento</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Nombre</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Apellido</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Mail</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Estado cuestionario</Data></Cell></Row>';
   foreach($participants as $p){ $status=(!empty($p['responded_at']) || (int)$p['has_used_token']===1)?'Contestado':'No contestado'; $xml.='<Row>'.xmlCell((string)$p['estate']).xmlCell((string)$p['name']).xmlCell((string)($p['last_name']??'')).xmlCell((string)$p['email']).xmlCell($status).'</Row>'; }
   $xml .= '</Table></Worksheet></Workbook>';
-  header('Content-Type: application/vnd.ms-excel'); header('Content-Disposition: attachment; filename="resultados_'.$institutionId.'_'.date('Ymd_His').'.xls"'); echo $xml;
+  header('Content-Type: application/xml; charset=UTF-8'); header('Content-Disposition: attachment; filename="resultados_'.$institutionId.'_'.date('Ymd_His').'.xml"'); echo $xml;
 }
 
 function activeTab(string $tab, string $current): string { return $tab === $current ? 'nav-item active' : 'nav-item'; }
