@@ -12,6 +12,8 @@ $tab = (string)($_GET['tab'] ?? 'datos');
 $activeTemplate = (string)($_GET['tpl'] ?? 'formal');
 $estateFilter = (string)($_GET['estate'] ?? 'Directivos');
 $questionnaireMode = (string)($_GET['qmode'] ?? '');
+$resultView = (string)($_GET['rview'] ?? 'charts');
+$resultEstate = (string)($_GET['rest'] ?? 'Directivos');
 $addMode = isset($_GET['add']) ? (int)$_GET['add'] === 1 : false;
 $selectedInstitutionId = isset($_GET['institution_id']) ? (int)$_GET['institution_id'] : 0;
 $flashError = $_SESSION['flash_error'] ?? '';
@@ -605,7 +607,50 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         <?php endforeach; ?>
       </div>
     </div></section>
-  <?php elseif($tab==='resultados'): ?><section class='card' style='margin-top:16px'><h3>Resultados</h3><div class='card-body'><div class='empty'>Sin respuestas aún.</div></div></section>
+  <?php elseif($tab==='resultados'): ?>
+    <?php
+      $resultEstate = in_array($resultEstate, $estates, true) ? $resultEstate : 'Directivos';
+      $responsesByQuestion = [];
+      if ($selectedInstitutionId > 0) {
+        $sql = "SELECT qq.id question_id, qq.question_text, qra.value, COUNT(*) qty
+                FROM questionnaire_response_answers qra
+                JOIN responses r ON r.id=qra.response_id
+                JOIN questionnaire_questions qq ON qq.id=qra.questionnaire_question_id
+                JOIN questionnaires q ON q.id=qq.questionnaire_id
+                WHERE q.institution_id=? AND qq.estate=?
+                GROUP BY qq.id, qq.question_text, qra.value
+                ORDER BY qq.id ASC, qra.value ASC";
+        $st = $pdo->prepare($sql); $st->execute([(int)$selectedInstitutionId, $resultEstate]);
+        foreach($st->fetchAll(PDO::FETCH_ASSOC) as $row){
+          $qid=(int)$row['question_id']; if(!isset($responsesByQuestion[$qid])) $responsesByQuestion[$qid]=['text'=>(string)$row['question_text'],'counts'=>[1=>0,2=>0,3=>0,4=>0,5=>0],'total'=>0];
+          $v=(int)$row['value']; $qty=(int)$row['qty']; if(isset($responsesByQuestion[$qid]['counts'][$v])) $responsesByQuestion[$qid]['counts'][$v]+=$qty; $responsesByQuestion[$qid]['total']+=$qty;
+        }
+      }
+    ?>
+    <section class='card' style='margin-top:16px'><h3>Resultados</h3><div class='card-body'>
+      <div class='chips'>
+        <a class='chip <?= $resultView==='charts'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=resultados&rview=charts&rest=<?= urlencode($resultEstate) ?>'>Gráficas</a>
+        <a class='chip <?= $resultView==='db'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=resultados&rview=db&rest=<?= urlencode($resultEstate) ?>'>Base de datos</a>
+      </div>
+      <?php if($resultView==='db'): ?>
+        <div style='margin-top:16px'><button class='btn gray' type='button'>Exportar Excel</button></div>
+      <?php else: ?>
+        <div class='chips' style='margin:14px 0'><?php foreach($estates as $e): ?><a class='chip <?= $resultEstate===$e?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=resultados&rview=charts&rest=<?= urlencode($e) ?>'><?= $e ?></a><?php endforeach; ?></div>
+        <?php if(empty($responsesByQuestion)): ?><div class='empty'>Aún no hay respuestas para <?= htmlspecialchars($resultEstate) ?>.</div>
+        <?php else: ?>
+          <?php foreach($responsesByQuestion as $i=>$q): ?>
+            <div class='chart' style='margin-bottom:12px'>
+              <strong>Pregunta <?= (int)$i ?>:</strong> <?= htmlspecialchars($q['text']) ?>
+              <div style='margin-top:10px'>
+                <?php for($v=1;$v<=5;$v++): $pct=$q['total']>0?round(($q['counts'][$v]/$q['total'])*100):0; ?>
+                  <div class='chart-row'><div><?= $v ?></div><div class='bar'><span style='width:<?= (int)$pct ?>%;background:#4f46e5'></span></div><div style='text-align:right'><?= (int)$pct ?>%</div></div>
+                <?php endfor; ?>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      <?php endif; ?>
+    </div></section>
   <?php elseif($tab==='entregable'): ?><section class='card' style='margin-top:16px'><h3>Entregable</h3><div class='card-body'><div class='empty'>Módulo en construcción.</div></div></section>
   <?php elseif($tab==='benchmarking'): ?><section class='card' style='margin-top:16px'><h3>Benchmarking</h3><div class='card-body'><div class='empty'>Necesitas al menos 2 proyectos con cuestionarios cargados.</div></div></section>
   <?php endif; ?>
