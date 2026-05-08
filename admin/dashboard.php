@@ -233,12 +233,16 @@ if ($selectedInstitutionId > 0) {
     $byEstate = ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]];
     foreach ($qq->fetchAll(PDO::FETCH_ASSOC) as $row) if (isset($byEstate[$row['estate']])) $byEstate[$row['estate']][] = (string)$row['question_text'];
     $hasAny = array_sum(array_map('count', $byEstate)) > 0;
-    if ($tab === 'cuestionarios' && $questionnaireMode === '' && $hasAny) {
+    if ($tab === 'cuestionarios' && ($questionnaireMode === '' || $questionnaireMode === 'institution_editor') && $hasAny) {
       $questionnaireMode = 'institution_editor';
       $_SESSION['q_builder'] = ['name' => (string)$existingQuestionnaire['name'], 'source_template_id' => $existingQuestionnaire['source_template_id'] ?? null, 'status' => (string)$existingQuestionnaire['status'], 'enable_comments' => (int)($existingQuestionnaire['enable_comments'] ?? 0), 'questions' => $byEstate];
       $qBuilder = $_SESSION['q_builder'];
     }
   }
+}
+if ($questionnaireMode === 'use_template') {
+  $sum = 0; foreach ($estates as $e) $sum += count($qBuilder['questions'][$e] ?? []);
+  if ($sum > 0) $questionnaireMode = 'institution_editor';
 }
 
 
@@ -386,7 +390,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         <div style='margin-top:10px'>
           <?php foreach($allTemplates as $tpl): ?>
             <form method='post' style='display:inline-block;margin:0 8px 8px 0'>
-              <input type='hidden' name='action' value='q_load_template'><input type='hidden' name='template_id' value='<?= (int)$tpl['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'>
+              <input type='hidden' name='action' value='q_load_template'><input type='hidden' name='template_id' value='<?= (int)$tpl['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='institution_editor'>
               <button class='chip'><?= htmlspecialchars((string)$tpl['name']) ?></button>
             </form>
           <?php endforeach; ?>
@@ -401,7 +405,6 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
           <div style='margin-top:10px;display:flex;gap:8px'><form method='post'><input type='hidden' name='action' value='q_save'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><button class='btn'>Guardar cuestionario</button></form><form method='post'><input type='hidden' name='action' value='q_publish'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><button class='btn gray'>Publicar cuestionario</button></form></div>
         <?php endif; ?>
       <?php elseif($questionnaireMode==='scratch' || $questionnaireMode==='institution_editor'): ?>
-        <a class='btn gray' style='text-decoration:none' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios'>← Volver</a>
         <form method='post' onsubmit='return confirm("¿Descartar todas las preguntas y volver al menú?")'><input type='hidden' name='action' value='q_discard_all'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value=''><button class='btn danger'>Descartar preguntas y volver al menú</button></form>
         <div class='chips' style='margin:14px 0'><?php foreach($estates as $e): ?><a class='chip <?= $estateFilter===$e?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=scratch&estate=<?= urlencode($e) ?>'><?= $e ?></a><?php endforeach; ?></div>
         <?php $questions = $qBuilder['questions'][$estateFilter] ?? []; if(count($questions)===0): ?><form method='post'><input type='hidden' name='action' value='q_inherit_questions'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='to_estate' value='<?= htmlspecialchars($estateFilter) ?>'><select name='from_estate'><?php foreach($estates as $e): if($e!==$estateFilter): ?><option><?= $e ?></option><?php endif; endforeach; ?></select><button class='btn gray'>Heredar preguntas</button></form><?php endif; ?>
