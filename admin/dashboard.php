@@ -388,7 +388,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
             <h4>Administrar plantillas</h4>
             <p>Crea y mantén plantillas reutilizables para futuros cuestionarios.</p>
             <div class='q-actions'>
-              <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=create_template'>Crear plantilla</a>
+              <a class='chip active' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=create_template'>Crear plantilla</a>
               <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=edit_template'>Modificar plantilla</a>
               <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=delete_template'>Eliminar plantilla</a>
             </div>
