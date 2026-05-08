@@ -147,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $fromEstate = (string)$_POST['from_estate']; $toEstate = (string)$_POST['to_estate'];
       if (in_array($fromEstate, $estates, true) && in_array($toEstate, $estates, true) && count($_SESSION['q_builder']['questions'][$toEstate] ?? []) === 0) $_SESSION['q_builder']['questions'][$toEstate] = $_SESSION['q_builder']['questions'][$fromEstate] ?? [];
     } elseif ($action === 'q_save' || $action === 'q_publish') {
-      $builder = $_SESSION['q_builder']; $name = trim((string)($builder['name'] ?? 'Cuestionario '.date('Y-m-d H:i')));
+      $builder = $_SESSION['q_builder']; if (isset($_POST['enable_comments'])) $builder['enable_comments'] = (int)$_POST['enable_comments'] === 1 || $_POST['enable_comments'] === 'on' ? 1 : 0; $name = trim((string)($builder['name'] ?? 'Cuestionario '.date('Y-m-d H:i')));
       $total = 0; foreach ($estates as $e) $total += count($builder['questions'][$e] ?? []); if ($total < 1) throw new RuntimeException('Debe incluir preguntas');
       $institutionId = (int)$_POST['institution_id']; $projectId = resolveProjectId($pdo, $institutionId); $status = $action === 'q_publish' ? 'published' : 'draft';
       $pdo->beginTransaction();
@@ -156,6 +156,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $qid = (int)$pdo->lastInsertId(); $ins = $pdo->prepare('INSERT INTO questionnaire_questions(questionnaire_id, estate, question_text, q_order) VALUES (?,?,?,?)');
       foreach ($estates as $estate) foreach (($builder['questions'][$estate] ?? []) as $i => $qText) $ins->execute([$qid, $estate, $qText, $i + 1]);
       $pdo->commit(); $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]]];
+    } elseif ($action === 'q_discard_all') {
+      $institutionId = (int)$_POST['institution_id']; $projectId = resolveProjectId($pdo, $institutionId);
+      $pdo->prepare('DELETE FROM questionnaires WHERE institution_id=? AND project_id=?')->execute([$institutionId, $projectId]);
+      $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]]];
+    } elseif ($action === 'qtpl_delete_template') {
+      $pdo->prepare('DELETE FROM questionnaire_templates WHERE id=?')->execute([(int)$_POST['template_id']]);
     }
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
@@ -210,6 +216,26 @@ if ($selectedInstitutionId > 0) {
     $tStmt->execute([$selectedInstitutionId]);
     foreach ($tStmt->fetchAll(PDO::FETCH_ASSOC) as $tpl) {
       $templates[$tpl['template_type']] = ['subject'=>(string)$tpl['subject'], 'body'=>(string)$tpl['body'], 'is_approved'=>(int)($tpl['is_approved'] ?? 0)];
+    }
+  }
+}
+
+$existingQuestionnaire = null;
+if ($selectedInstitutionId > 0) {
+  $projectId = resolveProjectId($pdo, $selectedInstitutionId);
+  $qst = $pdo->prepare('SELECT q.* FROM questionnaires q WHERE q.institution_id=? AND q.project_id=? ORDER BY q.id DESC LIMIT 1');
+  $qst->execute([$selectedInstitutionId, $projectId]);
+  $existingQuestionnaire = $qst->fetch(PDO::FETCH_ASSOC) ?: null;
+  if ($existingQuestionnaire) {
+    $qq = $pdo->prepare('SELECT estate, question_text FROM questionnaire_questions WHERE questionnaire_id=? ORDER BY q_order ASC, id ASC');
+    $qq->execute([(int)$existingQuestionnaire['id']]);
+    $byEstate = ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]];
+    foreach ($qq->fetchAll(PDO::FETCH_ASSOC) as $row) if (isset($byEstate[$row['estate']])) $byEstate[$row['estate']][] = (string)$row['question_text'];
+    $hasAny = array_sum(array_map('count', $byEstate)) > 0;
+    if ($tab === 'cuestionarios' && $questionnaireMode === '' && $hasAny) {
+      $questionnaireMode = 'institution_editor';
+      $_SESSION['q_builder'] = ['name' => (string)$existingQuestionnaire['name'], 'source_template_id' => $existingQuestionnaire['source_template_id'] ?? null, 'status' => (string)$existingQuestionnaire['status'], 'enable_comments' => (int)($existingQuestionnaire['enable_comments'] ?? 0), 'questions' => $byEstate];
+      $qBuilder = $_SESSION['q_builder'];
     }
   }
 }
@@ -315,7 +341,16 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
           <a class='chip active' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=create_template'>Crear plantilla</a>
           <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=use_template'>Usar plantilla</a>
           <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=scratch'>Comenzar desde cero</a>
+          <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=edit_template'>Modificar plantilla</a>
+          <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=delete_template'>Eliminar plantilla</a>
         </div>
+      <?php elseif($questionnaireMode==='edit_template' || $questionnaireMode==='delete_template'): ?>
+        <a class='btn gray' style='text-decoration:none' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios'>← Volver</a>
+        <?php $allTemplates = $pdo->query('SELECT id, name FROM questionnaire_templates ORDER BY id DESC')->fetchAll(PDO::FETCH_ASSOC); ?>
+        <div style='margin-top:10px'><?php foreach($allTemplates as $tpl): ?>
+          <?php if($questionnaireMode==='edit_template'): ?><a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=create_template&template_id=<?= (int)$tpl['id'] ?>'>Modificar: <?= htmlspecialchars((string)$tpl['name']) ?></a>
+          <?php else: ?><form method='post' style='display:inline-block;margin:0 8px 8px 0' onsubmit='return confirm("¿Eliminar plantilla?")'><input type='hidden' name='action' value='qtpl_delete_template'><input type='hidden' name='template_id' value='<?= (int)$tpl['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='delete_template'><button class='btn danger'>Eliminar: <?= htmlspecialchars((string)$tpl['name']) ?></button></form><?php endif; ?>
+        <?php endforeach; ?></div>
       <?php elseif($questionnaireMode==='create_template'): ?>
         <div style='display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap'>
           <a class='btn gray' style='text-decoration:none' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios'>← Volver</a>
@@ -364,14 +399,16 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
           <form method='post'><input type='hidden' name='action' value='q_add_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><label>Agregar pregunta</label><div style='display:flex;gap:8px'><input name='question_text' required><button class='btn'>Guardar</button></div></form>
           <div style='margin-top:10px;display:flex;gap:8px'><form method='post'><input type='hidden' name='action' value='q_save'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><button class='btn'>Guardar cuestionario</button></form><form method='post'><input type='hidden' name='action' value='q_publish'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><button class='btn gray'>Publicar cuestionario</button></form></div>
         <?php endif; ?>
-      <?php else: ?>
+      <?php elseif($questionnaireMode==='scratch' || $questionnaireMode==='institution_editor'): ?>
         <a class='btn gray' style='text-decoration:none' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios'>← Volver</a>
-        <form method='post'><input type='hidden' name='action' value='q_set_comments'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><label><input type='checkbox' name='enable_comments' <?= !empty($qBuilder['enable_comments'])?'checked':'' ?>> Habilitar comentarios</label> <button class='btn gray'>Guardar switch</button></form>
+        <form method='post' onsubmit='return confirm("¿Descartar todas las preguntas y volver al menú?")'><input type='hidden' name='action' value='q_discard_all'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value=''><button class='btn danger'>Descartar preguntas y volver al menú</button></form>
         <div class='chips' style='margin:14px 0'><?php foreach($estates as $e): ?><a class='chip <?= $estateFilter===$e?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=scratch&estate=<?= urlencode($e) ?>'><?= $e ?></a><?php endforeach; ?></div>
         <?php $questions = $qBuilder['questions'][$estateFilter] ?? []; if(count($questions)===0): ?><form method='post'><input type='hidden' name='action' value='q_inherit_questions'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='to_estate' value='<?= htmlspecialchars($estateFilter) ?>'><select name='from_estate'><?php foreach($estates as $e): if($e!==$estateFilter): ?><option><?= $e ?></option><?php endif; endforeach; ?></select><button class='btn gray'>Heredar preguntas</button></form><?php endif; ?>
         <form method='post'><input type='hidden' name='action' value='q_add_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><label>Agregar pregunta (Likert 1 a 5)</label><div style='display:flex;gap:8px'><input name='question_text' required><button class='btn'>Guardar</button></div></form>
         <div style='margin-top:10px;color:#6b7280'>Escala fija: 1 Muy en desacuerdo · 2 En desacuerdo · 3 Neutro · 4 De acuerdo · 5 Muy de acuerdo.</div>
-        <div style='margin-top:10px;display:flex;gap:8px'><form method='post'><input type='hidden' name='action' value='q_save'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><button class='btn'>Guardar cuestionario</button></form><form method='post'><input type='hidden' name='action' value='q_publish'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><button class='btn gray'>Publicar cuestionario</button></form></div>
+        <div style='margin-top:10px;display:flex;gap:8px;align-items:center'><label><input type='checkbox' form='qsaveform' name='enable_comments' <?= !empty($qBuilder['enable_comments'])?'checked':'' ?>> Habilitar Comentarios</label><form id='qsaveform' method='post'><input type='hidden' name='action' value='q_save'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><button class='btn'>Guardar cuestionario</button></form><form method='post'><input type='hidden' name='action' value='q_publish'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='enable_comments' value='<?= !empty($qBuilder['enable_comments'])?1:0 ?>'><button class='btn gray'>Publicar cuestionario</button></form></div>
+      <?php else: ?>
+        <div class='empty'>Modo no reconocido.</div>
       <?php endif; ?>
     </div></section>
   <?php elseif($tab==='participantes'): ?>
