@@ -293,6 +293,14 @@ input,select,textarea,button{font:inherit}input,select,textarea{width:100%;paddi
 .chips{display:flex;gap:8px;flex-wrap:wrap}.chip{padding:8px 12px;border:1px solid #d7dce6;border-radius:999px;background:#f3f4f6;color:#4b5563;text-decoration:none}.chip.active{background:#1da0e7;color:#fff;border-color:#1da0e7}.status-pill{display:inline-block;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;color:#fff}.status-pill.ok{background:#16a34a}.status-pill.no{background:#ef4444}
 table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #e6e9f0;text-align:left}.empty{border:2px dashed #d8dde8;border-radius:12px;padding:30px;text-align:center;color:#94a3b8}
 .alert{padding:12px;border-radius:10px;background:#fef2f2;color:#991b1b;border:1px solid #fecaca;margin:12px 0}
+.q-hub{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px}
+.q-group{border:1px solid #e5e7eb;border-radius:14px;padding:14px;background:#fafbff}
+.q-group h4{margin:0 0 10px;color:#1f2a44}
+.q-group p{margin:0 0 12px;color:#64748b;font-size:14px}
+.q-actions{display:flex;flex-wrap:wrap;gap:8px}
+.q-actions .chip{background:#fff}
+.editor-shell{border:1px solid #dbe1ee;border-radius:14px;padding:12px;background:#fcfdff}
+.field-help{color:#64748b;font-size:13px}
 </style></head><body>
 <div class='layout'><aside class='side'>
   <div class='logo'>SISTEMA DE DIAGNOSTICO</div>
@@ -342,12 +350,24 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
   <?php elseif($tab==='cuestionarios'): ?>
     <section class='card' style='margin-top:16px'><h3>Cuestionarios</h3><div class='card-body'>
       <?php if($questionnaireMode===''): ?>
-        <div class='chips'>
-          <a class='chip active' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=create_template'>Crear plantilla</a>
-          <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=use_template'>Usar plantilla</a>
-          <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=scratch'>Comenzar desde cero</a>
-          <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=edit_template'>Modificar plantilla</a>
-          <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=delete_template'>Eliminar plantilla</a>
+        <div class='q-hub'>
+          <div class='q-group'>
+            <h4>Administrar plantillas</h4>
+            <p>Crea y mantén plantillas reutilizables para futuros cuestionarios.</p>
+            <div class='q-actions'>
+              <a class='chip active' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=create_template'>Crear plantilla</a>
+              <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=edit_template'>Modificar plantilla</a>
+              <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=delete_template'>Eliminar plantilla</a>
+            </div>
+          </div>
+          <div class='q-group'>
+            <h4>Cuestionario de institución</h4>
+            <p>Usa una plantilla como base o comienza un cuestionario desde cero.</p>
+            <div class='q-actions'>
+              <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=use_template'>Usar plantilla</a>
+              <a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=scratch'>Comenzar desde cero</a>
+            </div>
+          </div>
         </div>
       <?php elseif($questionnaireMode==='edit_template' || $questionnaireMode==='delete_template'): ?>
         <a class='btn gray' style='text-decoration:none' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios'>← Volver</a>
@@ -407,11 +427,13 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
       <?php elseif($questionnaireMode==='scratch' || $questionnaireMode==='institution_editor'): ?>
         <form method='post' onsubmit='return confirm("¿Descartar todas las preguntas y volver al menú?")'><input type='hidden' name='action' value='q_discard_all'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value=''><button class='btn danger'>Descartar preguntas y volver al menú</button></form>
         <div class='chips' style='margin:14px 0'><?php foreach($estates as $e): ?><a class='chip <?= $estateFilter===$e?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=scratch&estate=<?= urlencode($e) ?>'><?= $e ?></a><?php endforeach; ?></div>
+        <div class='editor-shell'>
         <?php $questions = $qBuilder['questions'][$estateFilter] ?? []; if(count($questions)===0): ?><form method='post'><input type='hidden' name='action' value='q_inherit_questions'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='to_estate' value='<?= htmlspecialchars($estateFilter) ?>'><select name='from_estate'><?php foreach($estates as $e): if($e!==$estateFilter): ?><option><?= $e ?></option><?php endif; endforeach; ?></select><button class='btn gray'>Heredar preguntas</button></form><?php endif; ?>
         <?php foreach($questions as $idx=>$q): ?><div style='border:1px solid #e6e9f0;border-radius:12px;padding:10px;margin-bottom:8px'><form method='post' style='display:grid;grid-template-columns:1fr auto;gap:8px'><input type='hidden' name='action' value='q_update_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input name='question_text' value='<?= htmlspecialchars((string)$q) ?>'><button class='btn gray'>Editar</button></form><div style='display:flex;gap:6px;flex-wrap:wrap;margin-top:8px'><form method='post' onsubmit='return confirm("¿Eliminar pregunta?")'><input type='hidden' name='action' value='q_delete_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><button class='btn danger'>Eliminar</button></form><form method='post'><input type='hidden' name='action' value='q_move_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input type='hidden' name='direction' value='up'><button class='btn gray' <?= $idx===0?'disabled':'' ?>>Subir</button></form><form method='post'><input type='hidden' name='action' value='q_move_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input type='hidden' name='direction' value='down'><button class='btn gray' <?= $idx===count($questions)-1?'disabled':'' ?>>Bajar</button></form></div></div><?php endforeach; ?>
         <form method='post'><input type='hidden' name='action' value='q_add_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><label>Agregar pregunta (Likert 1 a 5)</label><div style='display:flex;gap:8px'><input name='question_text' required><button class='btn'>Guardar</button></div></form>
-        <div style='margin-top:10px;color:#6b7280'>Escala fija: 1 Muy en desacuerdo · 2 En desacuerdo · 3 Neutro · 4 De acuerdo · 5 Muy de acuerdo.</div>
+        <div class='field-help' style='margin-top:10px'>Escala fija: 1 Muy en desacuerdo · 2 En desacuerdo · 3 Neutro · 4 De acuerdo · 5 Muy de acuerdo.</div>
         <div style='margin-top:10px;display:flex;gap:8px;align-items:center'><label><input type='checkbox' form='qsaveform' name='enable_comments' <?= !empty($qBuilder['enable_comments'])?'checked':'' ?>> Habilitar Comentarios</label><form id='qsaveform' method='post'><input type='hidden' name='action' value='q_save'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><button class='btn'>Guardar cuestionario</button></form><form method='post'><input type='hidden' name='action' value='q_publish'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='enable_comments' value='<?= !empty($qBuilder['enable_comments'])?1:0 ?>'><button class='btn gray'>Publicar cuestionario</button></form></div>
+        </div>
       <?php else: ?>
         <div class='empty'>Modo no reconocido.</div>
       <?php endif; ?>
