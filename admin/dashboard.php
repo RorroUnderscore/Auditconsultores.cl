@@ -207,7 +207,7 @@ if ($selectedInstitutionId > 0) {
     $cStmt->execute([$selectedInstitutionId]);
     $contacts = $cStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $pStmt = $pdo->prepare('SELECT * FROM participants WHERE institution_id=? ORDER BY estate, id DESC');
+    $pStmt = $pdo->prepare("SELECT p.*, EXISTS(SELECT 1 FROM invitation_tokens t WHERE t.participant_id=p.id AND t.used_at IS NOT NULL) AS has_used_token FROM participants p WHERE p.institution_id=? ORDER BY p.estate, p.id DESC");
     $pStmt->execute([$selectedInstitutionId]);
     $allParticipants = $pStmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($allParticipants as $p) { if(isset($participantCounts[$p['estate']])) $participantCounts[$p['estate']]++; }
@@ -498,7 +498,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
             <td><?= htmlspecialchars((string)($p['last_name'] ?? '')) ?></td>
             <td><?= htmlspecialchars((string)$p['email']) ?></td>
             <td><?= (($p['email_delivery_status'] ?? 'pending')==='pending'?'No enviado':(($p['email_delivery_status']??'')==='sent'?'Enviado':'Recordatorio enviado')) ?></td>
-            <td><?= !empty($p['responded_at']) ? 'Contestado' : 'No contestado' ?></td>
+            <td><?= (!empty($p['responded_at']) || (int)($p['has_used_token'] ?? 0) === 1) ? 'Contestado' : 'No contestado' ?></td>
             <td>
               <div style='display:flex;gap:6px;flex-wrap:wrap'>
                 <form method='post'><input type='hidden' name='action' value='send_email'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><button class='btn gray'>Enviar</button></form>
@@ -580,7 +580,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         $total=(int)($participantCounts[$e]??0); $done=0;
         foreach($participants as $p) { /* filtered list, skip */ }
         if ($selectedInstitutionId > 0) {
-          $tmp = $pdo->prepare("SELECT COUNT(*) FROM participants WHERE institution_id=? AND estate=? AND responded_at IS NOT NULL");
+          $tmp = $pdo->prepare("SELECT COUNT(*) FROM participants p WHERE p.institution_id=? AND p.estate=? AND (p.responded_at IS NOT NULL OR EXISTS(SELECT 1 FROM invitation_tokens t WHERE t.participant_id=p.id AND t.used_at IS NOT NULL))");
           $tmp->execute([(int)$selectedInstitutionId, $e]);
           $done = (int)$tmp->fetchColumn();
         }

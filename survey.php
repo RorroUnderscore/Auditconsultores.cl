@@ -35,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
       $ins = $pdo->prepare('INSERT INTO questionnaire_response_answers(response_id,questionnaire_question_id,value) VALUES (?,?,?)');
       foreach($answers as $qid=>$val) $ins->execute([$responseId,$qid,$val]);
       $pdo->prepare('UPDATE invitation_tokens SET used_at=? WHERE id=?')->execute([date('c'), (int)$ctx['token_id']]);
+      $pdo->prepare('UPDATE participants SET responded_at=? WHERE id=?')->execute([date('c'), (int)$ctx['participant_id']]);
       $pdo->commit();
       $msg='Gracias, tu respuesta fue registrada correctamente.';
       $ctx['used_at'] = date('c');
