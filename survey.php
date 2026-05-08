@@ -43,9 +43,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
 }
 ?>
 <!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Encuesta 360</title><style>
-:root{--bg:#eef2f7;--card:#fff;--line:#d9e0ea;--text:#0f172a;--muted:#64748b;--brand:#4f46e5;--brand2:#2563eb;--ok:#065f46;--okbg:#ecfdf5;--err:#991b1b;--errbg:#fef2f2}
-[data-theme="dark"]{--bg:#0f172a;--card:#111827;--line:#334155;--text:#e2e8f0;--muted:#94a3b8;--brand:#6366f1;--brand2:#3b82f6;--ok:#86efac;--okbg:#052e1f;--err:#fca5a5;--errbg:#3f1111}
-*{box-sizing:border-box}body{margin:0;font-family:Inter,Segoe UI,sans-serif;background:linear-gradient(180deg,var(--bg),#cbd5e11f);color:var(--text)}
+:root{--bg:#eef2f7;--bg-grad-1:#f8fbff;--bg-grad-2:#d9e3f2;--card:#fff;--line:#d9e0ea;--text:#0f172a;--muted:#64748b;--brand:#4f46e5;--brand2:#2563eb;--ok:#065f46;--okbg:#ecfdf5;--err:#991b1b;--errbg:#fef2f2}
+[data-theme="dark"]{--bg:#0b1220;--bg-grad-1:#0a1633;--bg-grad-2:#3e4a5f;--card:#111827;--line:#334155;--text:#e2e8f0;--muted:#94a3b8;--brand:#6366f1;--brand2:#3b82f6;--ok:#86efac;--okbg:#052e1f;--err:#fca5a5;--errbg:#3f1111}
+*{box-sizing:border-box}html,body{min-height:100%}body{margin:0;font-family:Inter,Segoe UI,sans-serif;background:linear-gradient(180deg,var(--bg-grad-1) 0%, var(--bg) 35%, var(--bg-grad-2) 100%);background-attachment:fixed;color:var(--text)}
 .wrap{max-width:980px;margin:24px auto;padding:0 16px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .toggle{border:1px solid var(--line);background:var(--card);color:var(--text);padding:8px 12px;border-radius:999px;cursor:pointer}
 .box{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:24px;box-shadow:0 8px 25px #0000000d}
