@@ -334,6 +334,12 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
 .q-actions .chip{background:#fff}
 .editor-shell{border:1px solid #dbe1ee;border-radius:14px;padding:12px;background:#fcfdff}
 .field-help{color:#64748b;font-size:13px}
+.kpi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.estate-kpi{border:1px solid #e5e7eb;border-radius:16px;padding:18px;background:#fff}
+.estate-kpi .pct{font-size:44px;font-weight:800;line-height:1;margin-bottom:4px}
+.bar{height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden}.bar span{display:block;height:100%}
+.chart{border:1px solid #e5e7eb;border-radius:16px;padding:14px;background:#fff;margin-top:14px}
+.chart-row{display:grid;grid-template-columns:120px 1fr 70px;gap:12px;align-items:center;margin:10px 0}
 </style></head><body>
 <div class='layout'><aside class='side'>
   <div class='logo'>SISTEMA DE DIAGNOSTICO</div>
@@ -566,7 +572,39 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         </div>
       </div>
     </section>
-  <?php elseif($tab==='participacion'): ?><section class='card' style='margin-top:16px'><h3>Participación</h3><div class='card-body'><div class='empty'>Gráficos se conectarán con respuestas reales.</div></div></section>
+  <?php elseif($tab==='participacion'): ?>
+    <?php
+      $estateColors=['Directivos'=>'#6366f1','Docentes'=>'#0ea5e9','Apoderados'=>'#10b981','Paradocentes'=>'#f59e0b'];
+      $estateStats=[];
+      foreach($estates as $e){
+        $total=(int)($participantCounts[$e]??0); $done=0;
+        foreach($participants as $p) { /* filtered list, skip */ }
+        if ($selectedInstitutionId > 0) {
+          $tmp = $pdo->prepare("SELECT COUNT(*) FROM participants WHERE institution_id=? AND estate=? AND responded_at IS NOT NULL");
+          $tmp->execute([(int)$selectedInstitutionId, $e]);
+          $done = (int)$tmp->fetchColumn();
+        }
+        $pct=$total>0?(int)round(($done/$total)*100):0;
+        $estateStats[$e]=['total'=>$total,'done'=>$done,'pct'=>$pct];
+      }
+    ?>
+    <section class='card' style='margin-top:16px'><h3>Participación</h3><div class='card-body'>
+      <div class='kpi-grid'>
+        <?php foreach($estates as $e): $s=$estateStats[$e]; ?>
+        <div class='estate-kpi'>
+          <div class='pct' style='color:<?= $estateColors[$e] ?>'><?= $s['pct'] ?>%</div>
+          <strong><?= $e ?></strong><div style='color:#64748b'><?= $s['done'] ?>/<?= $s['total'] ?></div>
+          <div class='bar' style='margin-top:10px'><span style='width:<?= $s['pct'] ?>%;background:<?= $estateColors[$e] ?>'></span></div>
+        </div>
+        <?php endforeach; ?>
+      </div>
+      <div class='chart'>
+        <h4 style='margin:0 0 8px'>Participación por Estamento</h4>
+        <?php foreach($estates as $e): $s=$estateStats[$e]; ?>
+          <div class='chart-row'><div><?= $e ?></div><div class='bar'><span style='width:<?= $s['pct'] ?>%;background:<?= $estateColors[$e] ?>'></span></div><div style='text-align:right'><?= $s['pct'] ?>%</div></div>
+        <?php endforeach; ?>
+      </div>
+    </div></section>
   <?php elseif($tab==='resultados'): ?><section class='card' style='margin-top:16px'><h3>Resultados</h3><div class='card-body'><div class='empty'>Sin respuestas aún.</div></div></section>
   <?php elseif($tab==='entregable'): ?><section class='card' style='margin-top:16px'><h3>Entregable</h3><div class='card-body'><div class='empty'>Módulo en construcción.</div></div></section>
   <?php elseif($tab==='benchmarking'): ?><section class='card' style='margin-top:16px'><h3>Benchmarking</h3><div class='card-body'><div class='empty'>Necesitas al menos 2 proyectos con cuestionarios cargados.</div></div></section>
