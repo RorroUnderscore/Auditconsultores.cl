@@ -312,22 +312,31 @@ function exportResultsExcel(PDO $pdo, int $institutionId): void {
   $projectId = resolveProjectId($pdo, $institutionId);
   $participantsStmt = $pdo->prepare("SELECT p.*, EXISTS(SELECT 1 FROM invitation_tokens t WHERE t.participant_id=p.id AND t.used_at IS NOT NULL) has_used_token FROM participants p WHERE p.institution_id=? ORDER BY p.estate, p.last_name, p.name");
   $participantsStmt->execute([$institutionId]); $participants = $participantsStmt->fetchAll(PDO::FETCH_ASSOC);
+  $qSel = $pdo->prepare("SELECT id, name, status, updated_at FROM questionnaires WHERE institution_id=? AND project_id=? ORDER BY (status='published') DESC, id DESC LIMIT 1");
+  $qSel->execute([$institutionId, $projectId]); $activeQ = $qSel->fetch(PDO::FETCH_ASSOC);
+  $qid = (int)($activeQ['id'] ?? 0);
   $estates = ['Directivos','Docentes','Apoderados','Paradocentes'];
   $xml = '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
-  $xml .= '<Worksheet ss:Name="Resumen"><Table><Row>'.xmlCell('Proyecto').xmlCell((string)$projectId).'</Row><Row>'.xmlCell('Institución').xmlCell((string)$institution['name']).'</Row><Row>'.xmlCell('Exportado').xmlCell(date('c')).'</Row><Row>'.xmlCell('Participantes').xmlCell((string)count($participants)).'</Row></Table></Worksheet>';
+  $xml .= '<Styles><Style ss:ID="h"><Font ss:Bold="1"/><Interior ss:Color="#E8EEFF" ss:Pattern="Solid"/></Style><Style ss:ID="th"><Font ss:Bold="1"/><Interior ss:Color="#F3F4F6" ss:Pattern="Solid"/></Style></Styles>';
+  $xml .= '<Worksheet ss:Name="Resumen"><Table>';
+  $xml .= '<Row><Cell ss:StyleID="h"><Data ss:Type="String">Resumen de Exportación</Data></Cell></Row><Row></Row>';
+  $xml .= '<Row>'.xmlCell('Proyecto').xmlCell((string)$projectId).'</Row><Row>'.xmlCell('Institución').xmlCell((string)$institution['name']).'</Row><Row>'.xmlCell('Cuestionario').xmlCell((string)($activeQ['name'] ?? 'N/A')).'</Row><Row>'.xmlCell('Estado').xmlCell((string)($activeQ['status'] ?? 'N/A')).'</Row><Row>'.xmlCell('Última actualización').xmlCell((string)($activeQ['updated_at'] ?? 'N/A')).'</Row><Row>'.xmlCell('Exportado').xmlCell(date('c')).'</Row><Row>'.xmlCell('Participantes').xmlCell((string)count($participants)).'</Row>';
+  $xml .= '</Table></Worksheet>';
   foreach($estates as $estate){ $xml .= '<Worksheet ss:Name="'.htmlspecialchars($estate, ENT_XML1).'"><Table>';
-    $questions = $pdo->prepare("SELECT qq.id, qq.question_text FROM questionnaire_questions qq JOIN questionnaires q ON q.id=qq.questionnaire_id WHERE q.institution_id=? AND q.project_id=? AND qq.estate=? ORDER BY qq.q_order, qq.id");
-    $questions->execute([$institutionId, $projectId, $estate]); $qRows = $questions->fetchAll(PDO::FETCH_ASSOC);
-    foreach($qRows as $idx=>$q){ $xml .= '<Row>'.xmlCell('Pregunta '.($idx+1)).xmlCell((string)$q['question_text']).'</Row><Row>'.xmlCell('Participante').xmlCell('Correo').xmlCell('Respuesta').'</Row>';
-      $ans = $pdo->prepare("SELECT p.name,p.last_name,p.email,qra.value FROM questionnaire_response_answers qra JOIN responses r ON r.id=qra.response_id JOIN invitation_tokens t ON t.id=r.token_id JOIN participants p ON p.id=t.participant_id WHERE qra.questionnaire_question_id=? ORDER BY p.last_name,p.name");
-      $ans->execute([(int)$q['id']]); $counts=[1=>0,2=>0,3=>0,4=>0,5=>0];
+    if ($qid === 0) { $xml .= '<Row>'.xmlCell('Sin cuestionario activo').'</Row></Table></Worksheet>'; continue; }
+    $questions = $pdo->prepare("SELECT qq.id, qq.question_text FROM questionnaire_questions qq WHERE qq.questionnaire_id=? AND qq.estate=? ORDER BY qq.q_order, qq.id");
+    $questions->execute([$qid, $estate]); $qRows = $questions->fetchAll(PDO::FETCH_ASSOC);
+    foreach($qRows as $idx=>$q){ $xml .= '<Row><Cell ss:StyleID="h"><Data ss:Type="String">Pregunta '.($idx+1).'</Data></Cell>'.xmlCell((string)$q['question_text']).'</Row><Row><Cell ss:StyleID="th"><Data ss:Type="String">Participante</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Correo</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Respuesta</Data></Cell></Row>';
+      $ans = $pdo->prepare("SELECT p.name,p.last_name,p.email,qra.value FROM questionnaire_response_answers qra JOIN responses r ON r.id=qra.response_id JOIN invitation_tokens t ON t.id=r.token_id JOIN participants p ON p.id=t.participant_id WHERE r.questionnaire_id=? AND qra.questionnaire_question_id=? ORDER BY p.last_name,p.name");
+      $ans->execute([$qid,(int)$q['id']]); $counts=[1=>0,2=>0,3=>0,4=>0,5=>0];
       foreach($ans->fetchAll(PDO::FETCH_ASSOC) as $a){ $v=(int)$a['value']; if(isset($counts[$v]))$counts[$v]++; $xml.='<Row>'.xmlCell(trim(($a['name']??'').' '.($a['last_name']??''))).xmlCell((string)$a['email']).xmlCell((string)$v).'</Row>'; }
-      $xml .= '<Row>'.xmlCell('Resumen').xmlCell('1').xmlCell((string)$counts[1]).xmlCell('2').xmlCell((string)$counts[2]).xmlCell('3').xmlCell((string)$counts[3]).xmlCell('4').xmlCell((string)$counts[4]).xmlCell('5').xmlCell((string)$counts[5]).'</Row><Row></Row>'; }
-    $comments = $pdo->prepare("SELECT r.comment FROM responses r JOIN questionnaires q ON q.id=r.questionnaire_id WHERE q.institution_id=? AND q.project_id=? AND r.estate=? AND r.comment IS NOT NULL AND TRIM(r.comment)<>''");
-    $comments->execute([$institutionId,$projectId,$estate]); $cRows=$comments->fetchAll(PDO::FETCH_COLUMN);
-    if ($cRows){ $xml .= '<Row>'.xmlCell('Comentarios').'</Row>'; foreach($cRows as $c){ $xml .= '<Row>'.xmlCell((string)$c).'</Row>'; } }
+      $xml .= '<Row><Cell ss:StyleID="th"><Data ss:Type="String">Resumen</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">1</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">2</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">3</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">4</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">5</Data></Cell></Row>';
+      $xml .= '<Row>'.xmlCell('Resultados').xmlCell((string)$counts[1]).xmlCell((string)$counts[2]).xmlCell((string)$counts[3]).xmlCell((string)$counts[4]).xmlCell((string)$counts[5]).'</Row><Row></Row>'; }
+    $comments = $pdo->prepare("SELECT r.comment FROM responses r WHERE r.questionnaire_id=? AND r.estate=? AND r.comment IS NOT NULL AND TRIM(r.comment)<>''");
+    $comments->execute([$qid,$estate]); $cRows=$comments->fetchAll(PDO::FETCH_COLUMN);
+    if ($cRows){ $xml .= '<Row><Cell ss:StyleID="h"><Data ss:Type="String">Comentarios</Data></Cell></Row>'; foreach($cRows as $c){ $xml .= '<Row>'.xmlCell((string)$c).'</Row>'; } }
     $xml .= '</Table></Worksheet>'; }
-  $xml .= '<Worksheet ss:Name="Participantes"><Table><Row>'.xmlCell('Estamento').xmlCell('Nombre').xmlCell('Apellido').xmlCell('Mail').xmlCell('Estado cuestionario').'</Row>';
+  $xml .= '<Worksheet ss:Name="Participantes"><Table><Row><Cell ss:StyleID="th"><Data ss:Type="String">Estamento</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Nombre</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Apellido</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Mail</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Estado cuestionario</Data></Cell></Row>';
   foreach($participants as $p){ $status=(!empty($p['responded_at']) || (int)$p['has_used_token']===1)?'Contestado':'No contestado'; $xml.='<Row>'.xmlCell((string)$p['estate']).xmlCell((string)$p['name']).xmlCell((string)($p['last_name']??'')).xmlCell((string)$p['email']).xmlCell($status).'</Row>'; }
   $xml .= '</Table></Worksheet></Workbook>';
   header('Content-Type: application/vnd.ms-excel'); header('Content-Disposition: attachment; filename="resultados_'.$institutionId.'_'.date('Ymd_His').'.xls"'); echo $xml;
