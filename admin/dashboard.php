@@ -258,12 +258,45 @@ function dispatchParticipantEmail(PDO $pdo, int $participantId, string $template
   if (!$tpl) return false;
   if ((int)($tpl['is_approved'] ?? 0) !== 1) return false;
 
-  $link = 'https://auditconsultores.cl/survey/proximamente';
+  $token = getOrCreateParticipantToken($pdo, (int)$p['id'], (int)$p['project_id'], (string)$p['estate']);
+  $baseUrl = appConfig()['app_url'] ?? 'https://auditconsultores.cl';
+  $link = rtrim((string)$baseUrl, '/') . '/survey.php?token=' . urlencode($token);
   $fullName = trim(((string)($p['name'] ?? '')) . ' ' . ((string)($p['last_name'] ?? '')));
   $vars = ['[NOMBRE]' => $fullName !== '' ? $fullName : 'Participante', '[INSTITUCION]' => (string)($p['institution_name'] ?? ''), '[LINK]' => $link];
   $subject = renderTemplateText((string)$tpl['subject'], $vars);
   $body = renderTemplateText((string)$tpl['body'], $vars);
   return sendMailFromDiagnosticos((string)$p['email'], $subject, $body);
+}
+
+function getOrCreateParticipantToken(PDO $pdo, int $participantId, int $projectId, string $estate): string {
+  $sel = $pdo->prepare('SELECT token FROM invitation_tokens WHERE participant_id=? ORDER BY id DESC LIMIT 1');
+  $sel->execute([$participantId]);
+  $existing = $sel->fetchColumn();
+  if ($existing) return (string)$existing;
+
+  $surveyId = ensureSurveyForProject($pdo, $projectId);
+  $formId = ensureFormForEstate($pdo, $surveyId, $estate);
+  $token = bin2hex(random_bytes(16));
+  $pdo->prepare('INSERT INTO invitation_tokens(participant_id,form_id,token,used_at) VALUES (?,?,?,NULL)')->execute([$participantId, $formId, $token]);
+  return $token;
+}
+
+function ensureSurveyForProject(PDO $pdo, int $projectId): int {
+  $s = $pdo->prepare('SELECT id FROM surveys WHERE project_id=? ORDER BY id DESC LIMIT 1');
+  $s->execute([$projectId]);
+  $id = $s->fetchColumn();
+  if ($id) return (int)$id;
+  $pdo->prepare('INSERT INTO surveys(project_id,name) VALUES (?,?)')->execute([$projectId, 'Encuesta Institucional']);
+  return (int)$pdo->lastInsertId();
+}
+
+function ensureFormForEstate(PDO $pdo, int $surveyId, string $estate): int {
+  $f = $pdo->prepare('SELECT id FROM forms WHERE survey_id=? AND estate=? ORDER BY id DESC LIMIT 1');
+  $f->execute([$surveyId, $estate]);
+  $id = $f->fetchColumn();
+  if ($id) return (int)$id;
+  $pdo->prepare("INSERT INTO forms(survey_id,estate,status) VALUES (?,?, 'published')")->execute([$surveyId, $estate]);
+  return (int)$pdo->lastInsertId();
 }
 
 function activeTab(string $tab, string $current): string { return $tab === $current ? 'nav-item active' : 'nav-item'; }
