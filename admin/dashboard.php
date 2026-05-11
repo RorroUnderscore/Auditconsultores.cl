@@ -337,6 +337,12 @@ function ensureFormForEstate(PDO $pdo, int $surveyId, string $estate): int {
 }
 
 function xmlCell(string $value): string { return '<Cell><Data ss:Type="String">' . htmlspecialchars($value, ENT_XML1) . '</Data></Cell>'; }
+function getInstitutionEstates(PDO $pdo, int $institutionId): array {
+  $stmt = $pdo->prepare('SELECT name FROM institution_estates WHERE institution_id=? ORDER BY id ASC');
+  $stmt->execute([$institutionId]);
+  $rows = array_map(fn($r)=>(string)$r['name'], $stmt->fetchAll(PDO::FETCH_ASSOC));
+  return $rows ?: ['Directivos','Docentes','Apoderados','Paradocentes'];
+}
 
 function exportResultsExcel(PDO $pdo, int $institutionId): void {
   $inst = $pdo->prepare('SELECT * FROM institutions WHERE id=?'); $inst->execute([$institutionId]); $institution = $inst->fetch(PDO::FETCH_ASSOC) ?: ['name'=>'Institución'];
@@ -352,7 +358,7 @@ function exportResultsExcel(PDO $pdo, int $institutionId): void {
     LIMIT 1");
   $qSel->execute([$institutionId, $projectId]); $activeQ = $qSel->fetch(PDO::FETCH_ASSOC);
   $qid = (int)($activeQ['id'] ?? 0);
-  $estates = ['Directivos','Docentes','Apoderados','Paradocentes'];
+  $estates = getInstitutionEstates($pdo, $institutionId);
   $xml = '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
   $xml .= '<Styles><Style ss:ID="h"><Font ss:Bold="1"/><Interior ss:Color="#E8EEFF" ss:Pattern="Solid"/></Style><Style ss:ID="th"><Font ss:Bold="1"/><Interior ss:Color="#F3F4F6" ss:Pattern="Solid"/></Style></Styles>';
   $xml .= '<Worksheet ss:Name="Resumen"><Table>';
