@@ -1,0 +1,13 @@
+RewriteEngine On
+
+# keep existing files/directories
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Admin and login routes for cPanel hosting
+RewriteRule ^admin/?$ admin/index.php [L,QSA]
+RewriteRule ^login/?$ admin/index.php [L,QSA]
+
+# Public survey by token route
+RewriteRule ^survey/([A-Za-z0-9_-]+)/?$ survey.php?token=$1 [L,QSA]
