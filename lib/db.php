@@ -82,7 +82,8 @@ function migrate(PDO $pdo): void {
     safeExec($pdo, "ALTER TABLE participants ADD COLUMN email_delivery_status $text NOT NULL DEFAULT 'pending'");
     safeExec($pdo, "ALTER TABLE participants ADD COLUMN email_sent_at $text NULL");
     safeExec($pdo, "ALTER TABLE participants ADD COLUMN reminder_sent_at $text NULL");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS communication_templates (id $idCol, institution_id INT NOT NULL, template_type $text NOT NULL, subject $text NOT NULL, body $longText NOT NULL, updated_at $text NOT NULL, is_approved TINYINT NOT NULL DEFAULT 0, approved_at $text NULL, UNIQUE(institution_id, template_type), FOREIGN KEY(institution_id) REFERENCES institutions(id) ON DELETE CASCADE)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS communication_templates (id $idCol, institution_id INT NOT NULL, template_type $text NOT NULL, estate $text NOT NULL DEFAULT 'General', subject $text NOT NULL, body $longText NOT NULL, updated_at $text NOT NULL, is_approved TINYINT NOT NULL DEFAULT 0, approved_at $text NULL, UNIQUE(institution_id, template_type, estate), FOREIGN KEY(institution_id) REFERENCES institutions(id) ON DELETE CASCADE)");
+    safeExec($pdo, "ALTER TABLE communication_templates ADD COLUMN estate $text NOT NULL DEFAULT 'General'");
     safeExec($pdo, "ALTER TABLE communication_templates ADD COLUMN is_approved TINYINT NOT NULL DEFAULT 0");
     safeExec($pdo, "ALTER TABLE communication_templates ADD COLUMN approved_at $text NULL");
 $pdo->exec("CREATE TABLE IF NOT EXISTS invitation_tokens (id $idCol, participant_id INT NOT NULL, form_id INT NOT NULL, token $text UNIQUE NOT NULL, used_at $text NULL, FOREIGN KEY(participant_id) REFERENCES participants(id), FOREIGN KEY(form_id) REFERENCES forms(id))");
@@ -111,8 +112,10 @@ function seedDefaultAdmin(PDO $pdo): void {
 
     $stmt = $pdo->prepare('SELECT COUNT(*) FROM admins WHERE email = ?');
     $stmt->execute([$adminEmail]);
-    if ((int)$stmt->fetchColumn() > 0) return;
-
+    if ((int)$stmt->fetchColumn() > 0) {
+        $pdo->prepare('UPDATE admins SET password_hash=? WHERE email=?')->execute([password_hash($adminPassword, PASSWORD_DEFAULT), $adminEmail]);
+        return;
+    }
     $stmt = $pdo->prepare('INSERT INTO admins(email,password_hash) VALUES (?,?)');
     $stmt->execute([$adminEmail, password_hash($adminPassword, PASSWORD_DEFAULT)]);
 }

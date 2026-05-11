@@ -10,6 +10,6 @@ return [
   ],
   'admin_seed' => [
     'email' => 'admin@auditconsultores.cl',
-    'password' => 'CAMBIAR_PASSWORD_ADMIN',
+    'password' => 'Rodrigos.123',
   ],
 ];

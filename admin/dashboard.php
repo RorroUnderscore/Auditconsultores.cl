@@ -42,8 +42,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'create_participant') {
       $institutionId = (int)$_POST['institution_id'];
       $projectId = resolveProjectId($pdo, $institutionId);
+      $email = trim((string)$_POST['email']);
+      if (!filter_var($email, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Correo inválido');
       $pdo->prepare('INSERT INTO participants(institution_id, project_id, estate, name, last_name, email) VALUES (?,?,?,?,?,?)')->execute([
-        $institutionId, $projectId, (string)$_POST['estate'], trim((string)$_POST['name']), trim((string)$_POST['last_name']), trim((string)$_POST['email'])
+        $institutionId, $projectId, (string)$_POST['estate'], trim((string)$_POST['name']), trim((string)$_POST['last_name']), $email
       ]);
     } elseif ($action === 'delete_participant') {
       $pdo->prepare('DELETE FROM participants WHERE id=?')->execute([(int)$_POST['participant_id']]);
@@ -73,23 +75,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $pdo->prepare("UPDATE participants SET email_delivery_status='sent', email_sent_at=? WHERE id=?")->execute([date('c'), $pid]);
         }
       }
+    } elseif ($action === 'send_unanswered_reminders') {
+      $institutionId=(int)$_POST['institution_id']; $estate=(string)$_POST['estate'];
+      $q=$pdo->prepare("SELECT p.id FROM participants p WHERE p.institution_id=? AND p.estate=? AND p.email_delivery_status='sent' AND (p.responded_at IS NULL) AND EXISTS(SELECT 1 FROM invitation_tokens t WHERE t.participant_id=p.id AND t.used_at IS NULL)");
+      $q->execute([$institutionId,$estate]);
+      foreach($q->fetchAll(PDO::FETCH_COLUMN) as $pid){ $pid=(int)$pid; if (dispatchParticipantEmail($pdo, $pid, 'recordatorio')) $pdo->prepare("UPDATE participants SET email_delivery_status='reminded', reminder_sent_at=? WHERE id=?")->execute([date('c'), $pid]); }
     } elseif ($action === 'save_template') {
       $institutionId = (int)$_POST['institution_id'];
       $type = (string)$_POST['template_type'];
       $subject = trim((string)$_POST['subject']);
       $body = trim((string)$_POST['body']);
-      $sel = $pdo->prepare('SELECT id FROM communication_templates WHERE institution_id=? AND template_type=? LIMIT 1');
-      $sel->execute([$institutionId, $type]);
+      $estate = (string)($_POST['estate'] ?? 'General');
+      $sel = $pdo->prepare('SELECT id FROM communication_templates WHERE institution_id=? AND template_type=? AND estate=? LIMIT 1');
+      $sel->execute([$institutionId, $type, $estate]);
       $id = $sel->fetchColumn();
       if ($id) {
         $pdo->prepare('UPDATE communication_templates SET subject=?, body=?, updated_at=?, is_approved=0, approved_at=NULL WHERE id=?')->execute([$subject, $body, date('c'), (int)$id]);
       } else {
-        $pdo->prepare('INSERT INTO communication_templates(institution_id, template_type, subject, body, updated_at, is_approved, approved_at) VALUES (?,?,?,?,?,0,NULL)')->execute([$institutionId, $type, $subject, $body, date('c')]);
+        $pdo->prepare('INSERT INTO communication_templates(institution_id, template_type, estate, subject, body, updated_at, is_approved, approved_at) VALUES (?,?,?,?,?,?,0,NULL)')->execute([$institutionId, $type, $estate, $subject, $body, date('c')]);
       }
     } elseif ($action === 'approve_template') {
       $institutionId = (int)$_POST['institution_id'];
       $type = (string)$_POST['template_type'];
-      $pdo->prepare('UPDATE communication_templates SET is_approved=1, approved_at=? WHERE institution_id=? AND template_type=?')->execute([date('c'), $institutionId, $type]);
+      $estate = (string)($_POST['estate'] ?? 'General');
+      $pdo->prepare('UPDATE communication_templates SET is_approved=1, approved_at=? WHERE institution_id=? AND template_type=? AND estate=?')->execute([date('c'), $institutionId, $type, $estate]);
     } elseif ($action === 'qtpl_reset') {
       $_SESSION['qtpl_builder'] = ['name' => '', 'questions' => ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]]];
     } elseif ($action === 'qtpl_add_question') {
@@ -188,6 +197,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 if (!isset($_SESSION['qtpl_builder'])) $_SESSION['qtpl_builder'] = ['name' => '', 'questions' => ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]]];
 $qtplBuilder = $_SESSION['qtpl_builder'];
+if ($tab === 'cuestionarios' && $questionnaireMode === 'create_template' && isset($_GET['template_id'])) {
+  $templateId = (int)$_GET['template_id'];
+  $t = $pdo->prepare('SELECT id,name FROM questionnaire_templates WHERE id=? LIMIT 1'); $t->execute([$templateId]); $tpl = $t->fetch(PDO::FETCH_ASSOC);
+  if ($tpl) {
+    $qs=['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]];
+    $q = $pdo->prepare('SELECT estate,question_text FROM questionnaire_template_questions WHERE template_id=? ORDER BY q_order,id'); $q->execute([$templateId]);
+    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row) if(isset($qs[$row['estate']])) $qs[$row['estate']][]=(string)$row['question_text'];
+    $_SESSION['qtpl_builder']=['name'=>(string)$tpl['name'],'questions'=>$qs]; $qtplBuilder=$_SESSION['qtpl_builder'];
+  }
+}
 if (!isset($_SESSION['q_builder'])) $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]]];
 $qBuilder = $_SESSION['q_builder'];
 
@@ -198,7 +217,6 @@ $participants = [];
 $participantCounts = ['Directivos'=>0,'Docentes'=>0,'Apoderados'=>0,'Paradocentes'=>0];
 $templateDefaults = [
   'formal' => ['subject'=>'Invitación a Diagnóstico Institucional', 'body'=>"Estimado/a [NOMBRE],\n\nLe invitamos a responder el diagnóstico institucional de [INSTITUCION].\n\nPuede ingresar en: [LINK]\n\nAtentamente,\nEquipo de Diagnóstico"],
-  'amigable' => ['subject'=>'¡Te invitamos a participar!', 'body'=>"Hola [NOMBRE],\n\nQueremos invitarte a responder el diagnóstico de [INSTITUCION].\n\nTu enlace es: [LINK]\n\n¡Gracias por participar!"],
   'recordatorio' => ['subject'=>'Recordatorio: encuesta pendiente', 'body'=>"Hola [NOMBRE],\n\nTe recordamos que aún puedes responder el diagnóstico de [INSTITUCION].\n\nIngresa aquí: [LINK]\n\nGracias.", 'is_approved'=>0]
 ];
 $templates = $templateDefaults;
@@ -219,10 +237,10 @@ if ($selectedInstitutionId > 0) {
     foreach ($allParticipants as $p) { if(isset($participantCounts[$p['estate']])) $participantCounts[$p['estate']]++; }
     $participants = array_values(array_filter($allParticipants, fn($p) => ($p['estate'] ?? '') === $estateFilter));
 
-    $tStmt = $pdo->prepare('SELECT template_type, subject, body, is_approved FROM communication_templates WHERE institution_id=?');
+    $tStmt = $pdo->prepare('SELECT template_type, estate, subject, body, is_approved FROM communication_templates WHERE institution_id=?');
     $tStmt->execute([$selectedInstitutionId]);
     foreach ($tStmt->fetchAll(PDO::FETCH_ASSOC) as $tpl) {
-      $templates[$tpl['template_type']] = ['subject'=>(string)$tpl['subject'], 'body'=>(string)$tpl['body'], 'is_approved'=>(int)($tpl['is_approved'] ?? 0)];
+      if (($tpl['estate'] ?? '') === $estateFilter) $templates[$tpl['template_type']] = ['subject'=>(string)$tpl['subject'], 'body'=>(string)$tpl['body'], 'is_approved'=>(int)($tpl['is_approved'] ?? 0)];
     }
   }
 }
@@ -258,8 +276,8 @@ function dispatchParticipantEmail(PDO $pdo, int $participantId, string $template
   $p = $stmt->fetch(PDO::FETCH_ASSOC);
   if (!$p || empty($p['email'])) return false;
 
-  $tplStmt = $pdo->prepare('SELECT subject, body, is_approved FROM communication_templates WHERE institution_id=? AND template_type=? LIMIT 1');
-  $tplStmt->execute([(int)$p['institution_id'], $templateType]);
+  $tplStmt = $pdo->prepare('SELECT subject, body, is_approved FROM communication_templates WHERE institution_id=? AND template_type=? AND estate=? LIMIT 1');
+  $tplStmt->execute([(int)$p['institution_id'], $templateType, (string)$p['estate']]);
   $tpl = $tplStmt->fetch(PDO::FETCH_ASSOC);
   if (!$tpl) return false;
   if ((int)($tpl['is_approved'] ?? 0) !== 1) return false;
@@ -537,6 +555,10 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
           <input type='hidden' name='action' value='send_pending_bulk'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
           <button class='btn gray'>Enviar pendientes</button>
         </form>
+        <form method='post'>
+          <input type='hidden' name='action' value='send_unanswered_reminders'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
+          <button class='btn gray'>Recordar no contestados</button>
+        </form>
         <a class='btn' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($estateFilter) ?>&add=1'>+ Agregar</a></div>
       <table>
         <thead><tr><th>Nombre</th><th>Apellido</th><th>Mail</th><th>Estado correo</th><th>Estado cuestionario</th><th>Acciones</th></tr></thead>
@@ -581,15 +603,15 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
     </div></section>
   <?php elseif($tab==='comunicaciones'): ?>
 
-    <?php $currentTpl = in_array($activeTemplate, ['formal','amigable','recordatorio'], true) ? $activeTemplate : 'formal';
+    <?php $currentTpl = in_array($activeTemplate, ['formal','recordatorio'], true) ? $activeTemplate : 'formal';
           $tplData = $templates[$currentTpl] ?? ['subject'=>'','body'=>'','is_approved'=>0];
           $isApproved = (int)($tplData['is_approved'] ?? 0) === 1; ?>
     <section class='card' style='margin-top:16px'><h3>Plantillas de Carta</h3><div class='card-body'>
       <div class='chips'>
-        <a class='chip <?= $currentTpl==='formal'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=comunicaciones&tpl=formal'>Formal</a>
-        <a class='chip <?= $currentTpl==='amigable'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=comunicaciones&tpl=amigable'>Amigable</a>
-        <a class='chip <?= $currentTpl==='recordatorio'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=comunicaciones&tpl=recordatorio'>Recordatorio</a>
+        <a class='chip <?= $currentTpl==='formal'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=comunicaciones&tpl=formal&estate=<?= urlencode($estateFilter) ?>'>Formal</a>
+        <a class='chip <?= $currentTpl==='recordatorio'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=comunicaciones&tpl=recordatorio&estate=<?= urlencode($estateFilter) ?>'>Recordatorio</a>
       </div>
+      <div class='chips' style='margin-top:8px'><?php foreach($estates as $e): ?><a class='chip <?= $estateFilter===$e?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=comunicaciones&tpl=<?= urlencode($currentTpl) ?>&estate=<?= urlencode($e) ?>'><?= $e ?></a><?php endforeach; ?></div>
       <div style='margin-top:10px;display:flex;align-items:center;gap:10px'><span class='status-pill <?= $isApproved ? 'ok' : 'no' ?>'><?= $isApproved ? 'Aprobado' : 'No Aprobado' ?></span></div>
     </div></section>
 
@@ -603,6 +625,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         <input type='hidden' name='action' value='save_template'>
         <input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'>
         <input type='hidden' name='tab' value='comunicaciones'>
+        <input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
         <input type='hidden' name='template_type' value='<?= $currentTpl ?>'>
         <input type='hidden' name='tpl' value='<?= $currentTpl ?>'>
         <label>Asunto</label><input id='mail-subject' name='subject' value='<?= htmlspecialchars((string)($tplData['subject'] ?? '')) ?>' required>
@@ -614,6 +637,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
             <input type='hidden' name='action' value='approve_template'>
             <input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'>
             <input type='hidden' name='tab' value='comunicaciones'>
+            <input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
             <input type='hidden' name='template_type' value='<?= $currentTpl ?>'>
             <input type='hidden' name='tpl' value='<?= $currentTpl ?>'>
             <button class='btn gray'>Aprobar</button>
