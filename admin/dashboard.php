@@ -108,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $estate = (string)($_POST['estate'] ?? 'General');
       $pdo->prepare('UPDATE communication_templates SET is_approved=1, approved_at=? WHERE institution_id=? AND template_type=? AND estate=?')->execute([date('c'), $institutionId, $type, $estate]);
     } elseif ($action === 'qtpl_reset') {
-      $_SESSION['qtpl_builder'] = ['name' => '', 'questions' => ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]]];
+      $_SESSION['qtpl_builder'] = ['name' => '', 'questions' => initEstateQuestionMap($estates)];
     } elseif ($action === 'qtpl_add_question') {
       $estate = (string)$_POST['estate']; $text = trim((string)$_POST['question_text']);
       if ($text !== '' && in_array($estate, $estates, true)) $_SESSION['qtpl_builder']['questions'][$estate][] = $text;
@@ -137,14 +137,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $ins = $pdo->prepare('INSERT INTO questionnaire_template_questions(template_id, estate, question_text, q_order) VALUES (?,?,?,?)');
       foreach ($estates as $estate) foreach (($questionsByEstate[$estate] ?? []) as $i => $qText) $ins->execute([$tplId, $estate, $qText, $i + 1]);
       $pdo->commit();
-      $_SESSION['qtpl_builder'] = ['name' => '', 'questions' => ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]]];
+      $_SESSION['qtpl_builder'] = ['name' => '', 'questions' => initEstateQuestionMap($estates)];
     } elseif ($action === 'q_reset') {
-      $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]]];
+      $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => initEstateQuestionMap($estates)];
     } elseif ($action === 'q_load_template') {
       $templateId = (int)$_POST['template_id'];
       $stmt = $pdo->prepare('SELECT id, name FROM questionnaire_templates WHERE id=? LIMIT 1'); $stmt->execute([$templateId]); $tpl = $stmt->fetch(PDO::FETCH_ASSOC);
       if (!$tpl) throw new RuntimeException('Plantilla no encontrada');
-      $qs = ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]];
+      $qs = initEstateQuestionMap($estates);
       $qStmt = $pdo->prepare('SELECT estate, question_text FROM questionnaire_template_questions WHERE template_id=? ORDER BY estate, q_order ASC'); $qStmt->execute([$templateId]);
       foreach ($qStmt->fetchAll(PDO::FETCH_ASSOC) as $row) if (isset($qs[$row['estate']])) $qs[$row['estate']][] = (string)$row['question_text'];
       $_SESSION['q_builder'] = ['name' => (string)$tpl['name'], 'source_template_id' => $templateId, 'status' => 'draft', 'enable_comments' => 0, 'questions' => $qs];
@@ -174,11 +174,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->prepare('INSERT INTO questionnaires(institution_id, project_id, name, source_template_id, status, enable_comments, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)')->execute([$institutionId, $projectId, $name, $builder['source_template_id'], $status, (int)($builder['enable_comments'] ?? 0), date('c'), date('c')]);
       $qid = (int)$pdo->lastInsertId(); $ins = $pdo->prepare('INSERT INTO questionnaire_questions(questionnaire_id, estate, question_text, q_order) VALUES (?,?,?,?)');
       foreach ($estates as $estate) foreach (($builder['questions'][$estate] ?? []) as $i => $qText) $ins->execute([$qid, $estate, $qText, $i + 1]);
-      $pdo->commit(); $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]]];
+      $pdo->commit(); $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => initEstateQuestionMap($estates)];
     } elseif ($action === 'q_discard_all') {
       $institutionId = (int)$_POST['institution_id']; $projectId = resolveProjectId($pdo, $institutionId);
       $pdo->prepare('DELETE FROM questionnaires WHERE institution_id=? AND project_id=?')->execute([$institutionId, $projectId]);
-      $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]]];
+      $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => initEstateQuestionMap($estates)];
     } elseif ($action === 'qtpl_delete_template') {
       $pdo->prepare('DELETE FROM questionnaire_templates WHERE id=?')->execute([(int)$_POST['template_id']]);
     } elseif ($action === 'export_results_excel') {
@@ -203,26 +203,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   header('Location: ' . $redirect);
   exit;
 }
-if (!isset($_SESSION['qtpl_builder'])) $_SESSION['qtpl_builder'] = ['name' => '', 'questions' => ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]]];
+if (!isset($_SESSION['qtpl_builder'])) $_SESSION['qtpl_builder'] = ['name' => '', 'questions' => initEstateQuestionMap($estates)];
 $qtplBuilder = $_SESSION['qtpl_builder'];
 if ($tab === 'cuestionarios' && $questionnaireMode === 'create_template' && isset($_GET['template_id'])) {
   $templateId = (int)$_GET['template_id'];
   $t = $pdo->prepare('SELECT id,name FROM questionnaire_templates WHERE id=? LIMIT 1'); $t->execute([$templateId]); $tpl = $t->fetch(PDO::FETCH_ASSOC);
   if ($tpl) {
-    $qs=['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]];
+    $qs=initEstateQuestionMap($estates);
     $q = $pdo->prepare('SELECT estate,question_text FROM questionnaire_template_questions WHERE template_id=? ORDER BY q_order,id'); $q->execute([$templateId]);
     foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row) if(isset($qs[$row['estate']])) $qs[$row['estate']][]=(string)$row['question_text'];
     $_SESSION['qtpl_builder']=['name'=>(string)$tpl['name'],'questions'=>$qs]; $qtplBuilder=$_SESSION['qtpl_builder'];
   }
 }
-if (!isset($_SESSION['q_builder'])) $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]]];
+if (!isset($_SESSION['q_builder'])) $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => initEstateQuestionMap($estates)];
 $qBuilder = $_SESSION['q_builder'];
 
 $institutions = $pdo->query('SELECT * FROM institutions ORDER BY id DESC')->fetchAll(PDO::FETCH_ASSOC);
 $selectedInstitution = null;
 $contacts = [];
 $participants = [];
-$participantCounts = ['Directivos'=>0,'Docentes'=>0,'Apoderados'=>0,'Paradocentes'=>0];
+$participantCounts = array_fill_keys($estates, 0);
 $templateDefaults = [
   'formal' => ['subject'=>'Invitación a Diagnóstico Institucional', 'body'=>"Estimado/a [NOMBRE],\n\nLe invitamos a responder el diagnóstico institucional de [INSTITUCION].\n\nPuede ingresar en: [LINK]\n\nAtentamente,\nEquipo de Diagnóstico"],
   'recordatorio' => ['subject'=>'Recordatorio: encuesta pendiente', 'body'=>"Hola [NOMBRE],\n\nTe recordamos que aún puedes responder el diagnóstico de [INSTITUCION].\n\nIngresa aquí: [LINK]\n\nGracias.", 'is_approved'=>0]
@@ -267,7 +267,7 @@ if ($selectedInstitutionId > 0) {
   if ($existingQuestionnaire) {
     $qq = $pdo->prepare('SELECT estate, question_text FROM questionnaire_questions WHERE questionnaire_id=? ORDER BY q_order ASC, id ASC');
     $qq->execute([(int)$existingQuestionnaire['id']]);
-    $byEstate = ['Directivos'=>[],'Docentes'=>[],'Apoderados'=>[],'Paradocentes'=>[]];
+    $byEstate = initEstateQuestionMap($estates);
     foreach ($qq->fetchAll(PDO::FETCH_ASSOC) as $row) if (isset($byEstate[$row['estate']])) $byEstate[$row['estate']][] = (string)$row['question_text'];
     $hasAny = array_sum(array_map('count', $byEstate)) > 0;
     if ($tab === 'cuestionarios' && ($questionnaireMode === '' || $questionnaireMode === 'institution_editor') && $hasAny) {
@@ -342,6 +342,11 @@ function getInstitutionEstates(PDO $pdo, int $institutionId): array {
   $stmt->execute([$institutionId]);
   $rows = array_map(fn($r)=>(string)$r['name'], $stmt->fetchAll(PDO::FETCH_ASSOC));
   return $rows ?: ['Directivos','Docentes','Apoderados','Paradocentes'];
+}
+function initEstateQuestionMap(array $estates): array {
+  $out = [];
+  foreach ($estates as $e) $out[(string)$e] = [];
+  return $out;
 }
 
 function exportResultsExcel(PDO $pdo, int $institutionId): void {
