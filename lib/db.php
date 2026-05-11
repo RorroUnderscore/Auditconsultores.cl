@@ -72,6 +72,7 @@ function migrate(PDO $pdo): void {
     safeExec($pdo, "ALTER TABLE institutions ADD COLUMN status $text NOT NULL DEFAULT 'active'");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS institution_contacts (id $idCol, institution_id INT NOT NULL, full_name $text NOT NULL, role_title $text NULL, email $text NULL, phone $text NULL, is_primary TINYINT NOT NULL DEFAULT 0, FOREIGN KEY(institution_id) REFERENCES institutions(id) ON DELETE CASCADE)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS institution_estates (id $idCol, institution_id INT NOT NULL, name $text NOT NULL, created_at $text NOT NULL, UNIQUE(institution_id,name), FOREIGN KEY(institution_id) REFERENCES institutions(id) ON DELETE CASCADE)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS projects (id $idCol, institution_id INT NOT NULL, name $text NOT NULL, FOREIGN KEY(institution_id) REFERENCES institutions(id))");
     $pdo->exec("CREATE TABLE IF NOT EXISTS surveys (id $idCol, project_id INT NOT NULL, name $text NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id))");
     $pdo->exec("CREATE TABLE IF NOT EXISTS forms (id $idCol, survey_id INT NOT NULL, estate $text NOT NULL, status $text NOT NULL DEFAULT 'draft', FOREIGN KEY(survey_id) REFERENCES surveys(id))");
@@ -94,6 +95,8 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS invitation_tokens (id $idCol, participant
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS questionnaires (id $idCol, institution_id INT NOT NULL, project_id INT NOT NULL, name $text NOT NULL, source_template_id INT NULL, status $text NOT NULL DEFAULT 'draft', enable_comments TINYINT NOT NULL DEFAULT 0, created_at $text NOT NULL, updated_at $text NOT NULL, FOREIGN KEY(institution_id) REFERENCES institutions(id), FOREIGN KEY(project_id) REFERENCES projects(id))");
     $pdo->exec("CREATE TABLE IF NOT EXISTS questionnaire_questions (id $idCol, questionnaire_id INT NOT NULL, estate $text NOT NULL, question_text $longText NOT NULL, q_order INT NOT NULL, FOREIGN KEY(questionnaire_id) REFERENCES questionnaires(id) ON DELETE CASCADE)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS question_categories (id $idCol, institution_id INT NOT NULL, name $text NOT NULL, created_at $text NOT NULL, UNIQUE(institution_id,name), FOREIGN KEY(institution_id) REFERENCES institutions(id) ON DELETE CASCADE)");
+    safeExec($pdo, "ALTER TABLE questionnaire_questions ADD COLUMN category_id INT NULL");
     $pdo->exec("CREATE TABLE IF NOT EXISTS questionnaire_response_answers (id $idCol, response_id INT NOT NULL, questionnaire_question_id INT NOT NULL, value INT NOT NULL, FOREIGN KEY(response_id) REFERENCES responses(id) ON DELETE CASCADE, FOREIGN KEY(questionnaire_question_id) REFERENCES questionnaire_questions(id) ON DELETE CASCADE)");
     safeExec($pdo, "ALTER TABLE responses ADD COLUMN questionnaire_id INT NULL");
     safeExec($pdo, "ALTER TABLE responses ADD COLUMN participant_email $text NULL");

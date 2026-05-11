@@ -47,6 +47,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->prepare('INSERT INTO participants(institution_id, project_id, estate, name, last_name, email) VALUES (?,?,?,?,?,?)')->execute([
         $institutionId, $projectId, (string)$_POST['estate'], trim((string)$_POST['name']), trim((string)$_POST['last_name']), $email
       ]);
+    } elseif ($action === 'create_estate') {
+      $institutionId = (int)$_POST['institution_id'];
+      $name = trim((string)$_POST['estate_name']);
+      if ($name === '') throw new RuntimeException('Nombre de estamento requerido');
+      $countStmt = $pdo->prepare('SELECT COUNT(*) FROM institution_estates WHERE institution_id=?');
+      $countStmt->execute([$institutionId]);
+      if ((int)$countStmt->fetchColumn() >= 10) throw new RuntimeException('Máximo 10 estamentos por institución');
+      $pdo->prepare('INSERT INTO institution_estates(institution_id,name,created_at) VALUES (?,?,?)')->execute([$institutionId, $name, date('c')]);
     } elseif ($action === 'delete_participant') {
       $pdo->prepare('DELETE FROM participants WHERE id=?')->execute([(int)$_POST['participant_id']]);
     } elseif ($action === 'send_email') {
@@ -236,6 +244,11 @@ if ($selectedInstitutionId > 0) {
     $allParticipants = $pStmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($allParticipants as $p) { if(isset($participantCounts[$p['estate']])) $participantCounts[$p['estate']]++; }
     $participants = array_values(array_filter($allParticipants, fn($p) => ($p['estate'] ?? '') === $estateFilter));
+
+    $eStmt = $pdo->prepare('SELECT name FROM institution_estates WHERE institution_id=? ORDER BY id ASC');
+    $eStmt->execute([$selectedInstitutionId]);
+    $dbEstates = array_map(fn($r)=>(string)$r['name'], $eStmt->fetchAll(PDO::FETCH_ASSOC));
+    if ($dbEstates) { $estates = $dbEstates; $estateFilter = in_array($estateFilter, $estates, true) ? $estateFilter : $estates[0]; $participantCounts = array_fill_keys($estates, 0); foreach ($allParticipants as $p) if(isset($participantCounts[$p['estate']])) $participantCounts[$p['estate']]++; $participants = array_values(array_filter($allParticipants, fn($p) => ($p['estate'] ?? '') === $estateFilter)); }
 
     $tStmt = $pdo->prepare('SELECT template_type, estate, subject, body, is_approved FROM communication_templates WHERE institution_id=?');
     $tStmt->execute([$selectedInstitutionId]);
@@ -547,6 +560,11 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
   <?php elseif($tab==='participantes'): ?>
     <?php $colors=['Directivos'=>'#4f46e5','Docentes'=>'#0ea5e9','Apoderados'=>'#10b981','Paradocentes'=>'#f59e0b']; ?>
     <section class='card' style='margin-top:16px'><h3>Participantes - <?= htmlspecialchars($estateFilter) ?></h3><div class='card-body'>
+      <form method='post' style='margin-bottom:10px;display:flex;gap:8px;align-items:end'>
+        <input type='hidden' name='action' value='create_estate'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
+        <div style='flex:1'><label>Crear estamento (máx. 10)</label><input name='estate_name' placeholder='Ej: Asistentes de aula'></div>
+        <button class='btn gray' type='submit'>Agregar estamento</button>
+      </form>
       <div class='chips' style='margin-bottom:10px'>
         <?php foreach($estates as $e): ?><a class='chip <?= $estateFilter===$e?'active':'' ?>' style='<?= $estateFilter===$e?'background:'.$colors[$e].';border-color:'.$colors[$e].';color:#fff;':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($e) ?>'><?= $e ?> (<?= (int)$participantCounts[$e] ?>)</a><?php endforeach; ?>
       </div>
