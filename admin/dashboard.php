@@ -350,6 +350,10 @@ function initEstateQuestionMap(array $estates): array {
 }
 function qText($q): string { return is_array($q) ? (string)($q['text'] ?? '') : (string)$q; }
 function qCategory($q): string { return is_array($q) ? (string)($q['category'] ?? '') : ''; }
+function estateColorByIndex(int $i): string {
+  $palette = ['#4f46e5','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6','#14b8a6','#eab308','#06b6d4','#22c55e'];
+  return $palette[$i % count($palette)];
+}
 
 function exportResultsExcel(PDO $pdo, int $institutionId): void {
   $inst = $pdo->prepare('SELECT * FROM institutions WHERE id=?'); $inst->execute([$institutionId]); $institution = $inst->fetch(PDO::FETCH_ASSOC) ?: ['name'=>'Institución'];
@@ -571,7 +575,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
       <?php endif; ?>
     </div></section>
   <?php elseif($tab==='participantes'): ?>
-    <?php $colors=['Directivos'=>'#4f46e5','Docentes'=>'#0ea5e9','Apoderados'=>'#10b981','Paradocentes'=>'#f59e0b']; ?>
+    <?php $colors=[]; foreach(array_values($estates) as $i=>$e) $colors[$e]=estateColorByIndex($i); ?>
     <section class='card' style='margin-top:16px'><h3>Participantes - <?= htmlspecialchars($estateFilter) ?></h3><div class='card-body'>
       <form method='post' style='margin-bottom:10px;display:flex;gap:8px;align-items:end'>
         <input type='hidden' name='action' value='create_estate'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
@@ -678,7 +682,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
     </section>
   <?php elseif($tab==='participacion'): ?>
     <?php
-      $estateColors=['Directivos'=>'#6366f1','Docentes'=>'#0ea5e9','Apoderados'=>'#10b981','Paradocentes'=>'#f59e0b'];
+      $estateColors=[]; foreach(array_values($estates) as $i=>$e) $estateColors[$e]=estateColorByIndex($i);
       $estateStats=[];
       foreach($estates as $e){
         $total=(int)($participantCounts[$e]??0); $done=0;
