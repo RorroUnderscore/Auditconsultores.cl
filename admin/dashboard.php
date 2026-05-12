@@ -287,7 +287,7 @@ if ($tab === 'cuestionarios' && $questionnaireMode === 'create_template' && isse
   if ($tpl) {
     $qs=[]; $tEstates=[];
     $q = $pdo->prepare('SELECT estate,question_text FROM questionnaire_template_questions WHERE template_id=? ORDER BY estate,q_order,id'); $q->execute([$templateId]);
-    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){ $e=(string)$row['estate']; if(!isset($qs[$e])){$qs[$e]=[]; $tEstates[]=$e;} $txt=(string)$row['question_text']; $cat=''; if(preg_match('/^\\[(.*?)\\]\\s*(.*)$/',$txt,$m)){ $cat=$m[1]; $txt=$m[2]; } $qs[$e][]=['text'=>$txt,'category'=>$cat]; }
+    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){ $e=(string)$row['estate']; if(!isset($qs[$e])){$qs[$e]=[]; $tEstates[]=$e;} $decoded=decodeTemplateQuestion((string)$row['question_text']); $qs[$e][]=['text'=>(string)$decoded['text'],'category'=>(string)$decoded['category']]; }
     $_SESSION['qtpl_builder']=['template_id'=>(int)$tpl['id'],'name'=>(string)$tpl['name'],'estates'=>$tEstates,'questions'=>$qs]; $qtplBuilder=$_SESSION['qtpl_builder'];
   }
 }
