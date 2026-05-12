@@ -12,6 +12,7 @@ $tab = (string)($_GET['tab'] ?? 'datos');
 $activeTemplate = (string)($_GET['tpl'] ?? 'formal');
 $estateFilter = (string)($_GET['estate'] ?? 'Directivos');
 $templateEstateFilter = trim((string)($_GET['tpl_estate'] ?? ''));
+$questionnaireEstateFilter = trim((string)($_GET['q_estate'] ?? ''));
 $questionnaireMode = (string)($_GET['qmode'] ?? '');
 $resultView = (string)($_GET['rview'] ?? 'charts');
 $resultEstate = (string)($_GET['rest'] ?? 'Directivos');
@@ -183,7 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->commit();
       $_SESSION['qtpl_builder'] = ['template_id' => null, 'name' => '', 'estates' => [], 'questions' => []];
     } elseif ($action === 'q_reset') {
-      $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => initEstateQuestionMap($estates)];
+      $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'estates' => $estates, 'questions' => initEstateQuestionMap($estates)];
     } elseif ($action === 'q_load_template') {
       $templateId = (int)$_POST['template_id'];
       $institutionId = (int)$_POST['institution_id'];
@@ -209,12 +210,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $insEstate = $pdo->prepare('INSERT INTO institution_estates(institution_id, name, created_at) VALUES (?,?,?)');
       foreach ($templateEstates as $estateName) $insEstate->execute([$institutionId, $estateName, date('c')]);
       $pdo->commit();
-      $_SESSION['q_builder'] = ['name' => (string)$tpl['name'], 'source_template_id' => $templateId, 'status' => 'draft', 'enable_comments' => 0, 'questions' => $qs];
+      $_SESSION['q_builder'] = ['name' => (string)$tpl['name'], 'source_template_id' => $templateId, 'status' => 'draft', 'enable_comments' => 0, 'estates' => $templateEstates, 'questions' => $qs];
     } elseif ($action === 'q_set_comments') {
       $_SESSION['q_builder']['enable_comments'] = isset($_POST['enable_comments']) ? 1 : 0;
     } elseif ($action === 'q_add_question') {
       $estate = (string)$_POST['estate']; $text = trim((string)$_POST['question_text']); $category = trim((string)($_POST['question_category'] ?? ''));
-      if ($text !== '' && in_array($estate, $estates, true)) $_SESSION['q_builder']['questions'][$estate][] = ['text'=>$text,'category'=>$category];
+      if ($text !== '' && in_array($estate, $_SESSION['q_builder']['estates'] ?? [], true)) $_SESSION['q_builder']['questions'][$estate][] = ['text'=>$text,'category'=>$category];
     } elseif ($action === 'q_delete_question') {
       $estate = (string)$_POST['estate']; $idx = (int)$_POST['idx'];
       if (isset($_SESSION['q_builder']['questions'][$estate][$idx])) array_splice($_SESSION['q_builder']['questions'][$estate], $idx, 1);
@@ -226,21 +227,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $newIdx = $dir === 'up' ? $idx - 1 : $idx + 1; if (isset($list[$idx], $list[$newIdx])) { $tmp = $list[$idx]; $list[$idx] = $list[$newIdx]; $list[$newIdx] = $tmp; $_SESSION['q_builder']['questions'][$estate] = array_values($list); }
     } elseif ($action === 'q_inherit_questions') {
       $fromEstate = (string)$_POST['from_estate']; $toEstate = (string)$_POST['to_estate'];
-      if (in_array($fromEstate, $estates, true) && in_array($toEstate, $estates, true) && count($_SESSION['q_builder']['questions'][$toEstate] ?? []) === 0) $_SESSION['q_builder']['questions'][$toEstate] = $_SESSION['q_builder']['questions'][$fromEstate] ?? [];
+      if (in_array($fromEstate, $_SESSION['q_builder']['estates'] ?? [], true) && in_array($toEstate, $_SESSION['q_builder']['estates'] ?? [], true) && count($_SESSION['q_builder']['questions'][$toEstate] ?? []) === 0) $_SESSION['q_builder']['questions'][$toEstate] = $_SESSION['q_builder']['questions'][$fromEstate] ?? [];
     } elseif ($action === 'q_save' || $action === 'q_publish') {
       $builder = $_SESSION['q_builder']; if (isset($_POST['enable_comments'])) $builder['enable_comments'] = (int)$_POST['enable_comments'] === 1 || $_POST['enable_comments'] === 'on' ? 1 : 0; $name = trim((string)($builder['name'] ?? 'Cuestionario '.date('Y-m-d H:i')));
-      $total = 0; foreach ($estates as $e) $total += count($builder['questions'][$e] ?? []); if ($total < 1) throw new RuntimeException('Debe incluir preguntas');
+      $builderEstates = $builder['estates'] ?? $estates;
+      $total = 0; foreach ($builderEstates as $e) $total += count($builder['questions'][$e] ?? []); if ($total < 1) throw new RuntimeException('Debe incluir preguntas');
       $institutionId = (int)$_POST['institution_id']; $projectId = resolveProjectId($pdo, $institutionId); $status = $action === 'q_publish' ? 'published' : 'draft';
       $pdo->beginTransaction();
       if ($status === 'published') $pdo->prepare("UPDATE questionnaires SET status='closed', updated_at=? WHERE institution_id=? AND project_id=? AND status='published'")->execute([date('c'), $institutionId, $projectId]);
       $pdo->prepare('INSERT INTO questionnaires(institution_id, project_id, name, source_template_id, status, enable_comments, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)')->execute([$institutionId, $projectId, $name, $builder['source_template_id'], $status, (int)($builder['enable_comments'] ?? 0), date('c'), date('c')]);
       $qid = (int)$pdo->lastInsertId(); $ins = $pdo->prepare('INSERT INTO questionnaire_questions(questionnaire_id, estate, question_text, q_order) VALUES (?,?,?,?)');
-      foreach ($estates as $estate) foreach (($builder['questions'][$estate] ?? []) as $i => $qRow) { $qText = is_array($qRow)?(string)($qRow['text']??''):(string)$qRow; $cat = is_array($qRow)?trim((string)($qRow['category']??'')):''; $catId=null; if($cat!==''){ $cSel=$pdo->prepare('SELECT id FROM question_categories WHERE institution_id=? AND name=? LIMIT 1'); $cSel->execute([$institutionId,$cat]); $catId=$cSel->fetchColumn(); if(!$catId){ $pdo->prepare('INSERT INTO question_categories(institution_id,name,created_at) VALUES (?,?,?)')->execute([$institutionId,$cat,date('c')]); $catId=(int)$pdo->lastInsertId(); } } $ins->execute([$qid, $estate, $qText, $i + 1]); if($catId){ $pdo->prepare('UPDATE questionnaire_questions SET category_id=? WHERE id=?')->execute([(int)$catId,(int)$pdo->lastInsertId()]); } }
-      $pdo->commit(); $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => initEstateQuestionMap($estates)];
+      foreach ($builderEstates as $estate) foreach (($builder['questions'][$estate] ?? []) as $i => $qRow) { $qText = is_array($qRow)?(string)($qRow['text']??''):(string)$qRow; $cat = is_array($qRow)?trim((string)($qRow['category']??'')):''; $catId=null; if($cat!==''){ $cSel=$pdo->prepare('SELECT id FROM question_categories WHERE institution_id=? AND name=? LIMIT 1'); $cSel->execute([$institutionId,$cat]); $catId=$cSel->fetchColumn(); if(!$catId){ $pdo->prepare('INSERT INTO question_categories(institution_id,name,created_at) VALUES (?,?,?)')->execute([$institutionId,$cat,date('c')]); $catId=(int)$pdo->lastInsertId(); } } $ins->execute([$qid, $estate, $qText, $i + 1]); if($catId){ $pdo->prepare('UPDATE questionnaire_questions SET category_id=? WHERE id=?')->execute([(int)$catId,(int)$pdo->lastInsertId()]); } }
+      $pdo->commit(); $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'estates' => $estates, 'questions' => initEstateQuestionMap($estates)];
     } elseif ($action === 'q_discard_all') {
       $institutionId = (int)$_POST['institution_id']; $projectId = resolveProjectId($pdo, $institutionId);
       $pdo->prepare('DELETE FROM questionnaires WHERE institution_id=? AND project_id=?')->execute([$institutionId, $projectId]);
-      $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => initEstateQuestionMap($estates)];
+      $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'estates' => $estates, 'questions' => initEstateQuestionMap($estates)];
     } elseif ($action === 'qtpl_delete_template') {
       $templateId = (int)$_POST['template_id'];
       $pdo->beginTransaction();
@@ -269,6 +271,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!empty($_POST['emode'])) $redirect .= '&emode=' . urlencode((string)$_POST['emode']);
     if (!empty($_POST['qmode'])) $redirect .= '&qmode=' . urlencode((string)$_POST['qmode']);
     if (!empty($_POST['tpl_estate'])) $redirect .= '&tpl_estate=' . urlencode((string)$_POST['tpl_estate']);
+    if (!empty($_POST['q_estate'])) $redirect .= '&q_estate=' . urlencode((string)$_POST['q_estate']);
     if (($action === 'q_save' || $action === 'q_publish') && (string)($_POST['tab'] ?? '') === 'cuestionarios') $redirect = '/admin/dashboard.php?institution_id=' . (int)$_POST['institution_id'] . '&tab=cuestionarios&qmode=institution_editor';
   }
   header('Location: ' . $redirect);
@@ -291,7 +294,7 @@ if ($tab === 'cuestionarios' && $questionnaireMode === 'create_template' && isse
     $_SESSION['qtpl_builder']=['template_id'=>(int)$tpl['id'],'name'=>(string)$tpl['name'],'estates'=>$tEstates,'questions'=>$qs]; $qtplBuilder=$_SESSION['qtpl_builder'];
   }
 }
-if (!isset($_SESSION['q_builder'])) $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => initEstateQuestionMap($estates)];
+if (!isset($_SESSION['q_builder'])) $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'estates' => $estates, 'questions' => initEstateQuestionMap($estates)];
 $qBuilder = $_SESSION['q_builder'];
 
 $institutions = $pdo->query('SELECT * FROM institutions ORDER BY id DESC')->fetchAll(PDO::FETCH_ASSOC);
@@ -344,18 +347,23 @@ if ($selectedInstitutionId > 0) {
   if ($existingQuestionnaire) {
     $qq = $pdo->prepare('SELECT estate, question_text FROM questionnaire_questions WHERE questionnaire_id=? ORDER BY q_order ASC, id ASC');
     $qq->execute([(int)$existingQuestionnaire['id']]);
-    $byEstate = initEstateQuestionMap($estates);
-    foreach ($qq->fetchAll(PDO::FETCH_ASSOC) as $row) if (isset($byEstate[$row['estate']])) $byEstate[$row['estate']][] = (string)$row['question_text'];
+    $byEstate = []; $qEstates=[];
+    foreach ($qq->fetchAll(PDO::FETCH_ASSOC) as $row) { $e=(string)$row['estate']; if(!isset($byEstate[$e])){ $byEstate[$e]=[]; $qEstates[]=$e; } $byEstate[$e][] = (string)$row['question_text']; }
     $hasAny = array_sum(array_map('count', $byEstate)) > 0;
     if ($tab === 'cuestionarios' && ($questionnaireMode === '' || $questionnaireMode === 'institution_editor') && $hasAny) {
       $questionnaireMode = 'institution_editor';
-      $_SESSION['q_builder'] = ['name' => (string)$existingQuestionnaire['name'], 'source_template_id' => $existingQuestionnaire['source_template_id'] ?? null, 'status' => (string)$existingQuestionnaire['status'], 'enable_comments' => (int)($existingQuestionnaire['enable_comments'] ?? 0), 'questions' => $byEstate];
+      $_SESSION['q_builder'] = ['name' => (string)$existingQuestionnaire['name'], 'source_template_id' => $existingQuestionnaire['source_template_id'] ?? null, 'status' => (string)$existingQuestionnaire['status'], 'enable_comments' => (int)($existingQuestionnaire['enable_comments'] ?? 0), 'estates' => $qEstates, 'questions' => $byEstate];
       $qBuilder = $_SESSION['q_builder'];
     }
   }
 }
+
+if ($tab === 'cuestionarios' && $questionnaireMode === '') {
+  $sum=0; foreach (($qBuilder['estates'] ?? []) as $e) $sum += count($qBuilder['questions'][$e] ?? []);
+  if ($sum > 0) $questionnaireMode = 'institution_editor';
+}
 if ($questionnaireMode === 'use_template') {
-  $sum = 0; foreach ($estates as $e) $sum += count($qBuilder['questions'][$e] ?? []);
+  $sum = 0; foreach (($qBuilder['estates'] ?? []) as $e) $sum += count($qBuilder['questions'][$e] ?? []);
   if ($sum > 0) $questionnaireMode = 'institution_editor';
 }
 
@@ -660,20 +668,20 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         </div>
         <?php if(($qBuilder['name'] ?? '') !== ''): ?>
           <form method='post'><input type='hidden' name='action' value='q_set_comments'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><label><input type='checkbox' name='enable_comments' <?= !empty($qBuilder['enable_comments'])?'checked':'' ?>> Habilitar comentarios</label> <button class='btn gray'>Guardar switch</button></form>
-          <?php $questions = $qBuilder['questions'][$estateFilter] ?? []; ?>
-          <div class='chips' style='margin:14px 0'><?php foreach($estates as $e): ?><a class='chip <?= $estateFilter===$e?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=use_template&estate=<?= urlencode($e) ?>'><?= $e ?></a><?php endforeach; ?></div>
-          <?php if(count($questions)===0): ?><form method='post'><input type='hidden' name='action' value='q_inherit_questions'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><input type='hidden' name='to_estate' value='<?= htmlspecialchars($estateFilter) ?>'><select name='from_estate'><?php foreach($estates as $e): if($e!==$estateFilter): ?><option><?= $e ?></option><?php endif; endforeach; ?></select><button class='btn gray'>Heredar preguntas</button></form><?php endif; ?>
-          <?php foreach($questions as $idx=>$q): ?><div style='border:1px solid #e6e9f0;border-radius:12px;padding:10px;margin-bottom:8px'><form method='post' style='display:grid;grid-template-columns:1fr 220px auto;gap:8px'><input type='hidden' name='action' value='q_update_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input name='question_text' value='<?= htmlspecialchars(qText($q)) ?>'><input name='question_category' placeholder='Categoría' value='<?= htmlspecialchars(qCategory($q)) ?>'><button class='btn gray'>Editar</button></form></div><?php endforeach; ?>
-          <form method='post'><input type='hidden' name='action' value='q_add_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><label>Agregar pregunta</label><div style='display:grid;grid-template-columns:1fr 220px auto;gap:8px'><input name='question_text' required><input name='question_category' placeholder='Categoría'><button class='btn'>Guardar</button></div></form>
+          <?php $qEstates = $qBuilder['estates'] ?? []; $activeQEstate = $questionnaireEstateFilter!==''?$questionnaireEstateFilter:$estateFilter; if(!in_array($activeQEstate,$qEstates,true)) $activeQEstate = $qEstates[0] ?? ''; $questions = $activeQEstate!=='' ? ($qBuilder['questions'][$activeQEstate] ?? []) : []; ?>
+          <div class='chips' style='margin:14px 0'><?php foreach(($qBuilder['estates'] ?? []) as $e): ?><a class='chip <?= $activeQEstate===$e?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=use_template&q_estate=<?= urlencode($e) ?>'><?= htmlspecialchars($e) ?></a><?php endforeach; ?></div>
+          <?php if(count($questions)===0): ?><form method='post'><input type='hidden' name='action' value='q_inherit_questions'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><input type='hidden' name='to_estate' value='<?= htmlspecialchars($activeQEstate) ?>'><select name='from_estate'><?php foreach($estates as $e): if($e!==$activeQEstate): ?><option><?= $e ?></option><?php endif; endforeach; ?></select><button class='btn gray'>Heredar preguntas</button></form><?php endif; ?>
+          <?php foreach($questions as $idx=>$q): ?><div style='border:1px solid #e6e9f0;border-radius:12px;padding:10px;margin-bottom:8px'><form method='post' style='display:grid;grid-template-columns:1fr 220px auto;gap:8px'><input type='hidden' name='action' value='q_update_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input name='question_text' value='<?= htmlspecialchars(qText($q)) ?>'><input name='question_category' placeholder='Categoría' value='<?= htmlspecialchars(qCategory($q)) ?>'><button class='btn gray'>Editar</button></form></div><?php endforeach; ?>
+          <form method='post'><input type='hidden' name='action' value='q_add_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'><label>Agregar pregunta</label><div style='display:grid;grid-template-columns:1fr 220px auto;gap:8px'><input name='question_text' required><input name='question_category' placeholder='Categoría'><button class='btn'>Guardar</button></div></form>
           <div style='margin-top:10px;display:flex;gap:8px'><form method='post'><input type='hidden' name='action' value='q_save'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><button class='btn'>Guardar cuestionario</button></form><form method='post'><input type='hidden' name='action' value='q_publish'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'><button class='btn gray'>Publicar cuestionario</button></form></div>
         <?php endif; ?>
       <?php elseif($questionnaireMode==='scratch' || $questionnaireMode==='institution_editor'): ?>
         <form method='post' onsubmit='return confirm("¿Descartar todas las preguntas y volver al menú?")'><input type='hidden' name='action' value='q_discard_all'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value=''><button class='btn danger'>Descartar preguntas y volver al menú</button></form>
-        <div class='chips' style='margin:14px 0'><?php foreach($estates as $e): ?><a class='chip <?= $estateFilter===$e?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=scratch&estate=<?= urlencode($e) ?>'><?= $e ?></a><?php endforeach; ?></div>
+        <div class='chips' style='margin:14px 0'><?php $qEstates = $qBuilder['estates'] ?? []; $activeQEstate = $questionnaireEstateFilter!==''?$questionnaireEstateFilter:$estateFilter; if(!in_array($activeQEstate,$qEstates,true)) $activeQEstate = $qEstates[0] ?? ''; foreach($qEstates as $e): ?><a class='chip <?= $activeQEstate===$e?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=scratch&q_estate=<?= urlencode($e) ?>'><?= htmlspecialchars($e) ?></a><?php endforeach; ?></div>
         <div class='editor-shell'>
-        <?php $questions = $qBuilder['questions'][$estateFilter] ?? []; if(count($questions)===0): ?><form method='post'><input type='hidden' name='action' value='q_inherit_questions'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='to_estate' value='<?= htmlspecialchars($estateFilter) ?>'><select name='from_estate'><?php foreach($estates as $e): if($e!==$estateFilter): ?><option><?= $e ?></option><?php endif; endforeach; ?></select><button class='btn gray'>Heredar preguntas</button></form><?php endif; ?>
-        <?php foreach($questions as $idx=>$q): ?><div style='border:1px solid #e6e9f0;border-radius:12px;padding:10px;margin-bottom:8px'><form method='post' style='display:grid;grid-template-columns:1fr 220px auto;gap:8px'><input type='hidden' name='action' value='q_update_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input name='question_text' value='<?= htmlspecialchars(qText($q)) ?>'><input name='question_category' placeholder='Categoría' value='<?= htmlspecialchars(qCategory($q)) ?>'><button class='btn gray'>Editar</button></form><div style='display:flex;gap:6px;flex-wrap:wrap;margin-top:8px'><form method='post' onsubmit='return confirm("¿Eliminar pregunta?")'><input type='hidden' name='action' value='q_delete_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><button class='btn danger'>Eliminar</button></form><form method='post'><input type='hidden' name='action' value='q_move_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input type='hidden' name='direction' value='up'><button class='btn gray' <?= $idx===0?'disabled':'' ?>>Subir</button></form><form method='post'><input type='hidden' name='action' value='q_move_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input type='hidden' name='direction' value='down'><button class='btn gray' <?= $idx===count($questions)-1?'disabled':'' ?>>Bajar</button></form></div></div><?php endforeach; ?>
-        <form method='post'><input type='hidden' name='action' value='q_add_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><label>Agregar pregunta (Likert 1 a 5)</label><div style='display:grid;grid-template-columns:1fr 220px auto;gap:8px'><input name='question_text' required><input name='question_category' placeholder='Categoría'><button class='btn'>Guardar</button></div></form>
+        <?php $questions = $activeQEstate!=='' ? ($qBuilder['questions'][$activeQEstate] ?? []) : []; if(count($questions)===0): ?><form method='post'><input type='hidden' name='action' value='q_inherit_questions'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='to_estate' value='<?= htmlspecialchars($activeQEstate) ?>'><select name='from_estate'><?php foreach($estates as $e): if($e!==$activeQEstate): ?><option><?= $e ?></option><?php endif; endforeach; ?></select><button class='btn gray'>Heredar preguntas</button></form><?php endif; ?>
+        <?php foreach($questions as $idx=>$q): ?><div style='border:1px solid #e6e9f0;border-radius:12px;padding:10px;margin-bottom:8px'><form method='post' style='display:grid;grid-template-columns:1fr 220px auto;gap:8px'><input type='hidden' name='action' value='q_update_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input name='question_text' value='<?= htmlspecialchars(qText($q)) ?>'><input name='question_category' placeholder='Categoría' value='<?= htmlspecialchars(qCategory($q)) ?>'><button class='btn gray'>Editar</button></form><div style='display:flex;gap:6px;flex-wrap:wrap;margin-top:8px'><form method='post' onsubmit='return confirm("¿Eliminar pregunta?")'><input type='hidden' name='action' value='q_delete_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><button class='btn danger'>Eliminar</button></form><form method='post'><input type='hidden' name='action' value='q_move_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input type='hidden' name='direction' value='up'><button class='btn gray' <?= $idx===0?'disabled':'' ?>>Subir</button></form><form method='post'><input type='hidden' name='action' value='q_move_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input type='hidden' name='direction' value='down'><button class='btn gray' <?= $idx===count($questions)-1?'disabled':'' ?>>Bajar</button></form></div></div><?php endforeach; ?>
+        <form method='post'><input type='hidden' name='action' value='q_add_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'><label>Agregar pregunta (Likert 1 a 5)</label><div style='display:grid;grid-template-columns:1fr 220px auto;gap:8px'><input name='question_text' required><input name='question_category' placeholder='Categoría'><button class='btn'>Guardar</button></div></form>
         <div class='field-help' style='margin-top:10px'>Escala fija: 1 Muy en desacuerdo · 2 En desacuerdo · 3 Neutro · 4 De acuerdo · 5 Muy de acuerdo.</div>
         <div style='margin-top:10px;display:flex;gap:8px;align-items:center'><label><input type='checkbox' form='qsaveform' name='enable_comments' <?= !empty($qBuilder['enable_comments'])?'checked':'' ?>> Habilitar Comentarios</label><form id='qsaveform' method='post'><input type='hidden' name='action' value='q_save'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><button class='btn'>Guardar cuestionario</button></form><form method='post'><input type='hidden' name='action' value='q_publish'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='scratch'><input type='hidden' name='enable_comments' value='<?= !empty($qBuilder['enable_comments'])?1:0 ?>'><button class='btn gray'>Publicar cuestionario</button></form></div>
         </div>
@@ -685,7 +693,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
     <?php $colors=[]; foreach(array_values($estates) as $i=>$e) $colors[$e]=estateColorByIndex($i); ?>
     <section class='card' style='margin-top:16px'><h3>Participantes - <?= htmlspecialchars($estateFilter) ?></h3><div class='card-body'>
       <form method='post' style='margin-bottom:10px;display:flex;gap:8px;align-items:end'>
-        <input type='hidden' name='action' value='create_estate'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
+        <input type='hidden' name='action' value='create_estate'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'>
         <div style='flex:1'><label>Crear estamento (máx. 10)</label><input name='estate_name' placeholder='Ej: Asistentes de aula'></div>
         <button class='btn gray' type='submit'>Agregar estamento</button>
       </form>
@@ -700,18 +708,18 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         <a class='chip <?= $estateManageMode==='delete'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($estateFilter) ?>&emode=<?= $estateManageMode==='delete'?'': 'delete' ?>'>🗑️ Eliminar estamento</a>
       </div>
       <?php if($estateManageMode==='rename'): ?>
-        <form method='post' style='display:flex;gap:8px;align-items:end;margin-bottom:10px'><input type='hidden' name='action' value='rename_estate'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='emode' value='rename'><input type='hidden' name='old_estate' value='<?= htmlspecialchars($estateFilter) ?>'><div style='flex:1'><label>Renombrar estamento actual (<?= htmlspecialchars($estateFilter) ?>)</label><input name='new_estate' required></div><button class='btn gray'>Guardar nombre</button></form>
+        <form method='post' style='display:flex;gap:8px;align-items:end;margin-bottom:10px'><input type='hidden' name='action' value='rename_estate'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'><input type='hidden' name='emode' value='rename'><input type='hidden' name='old_estate' value='<?= htmlspecialchars($estateFilter) ?>'><div style='flex:1'><label>Renombrar estamento actual (<?= htmlspecialchars($estateFilter) ?>)</label><input name='new_estate' required></div><button class='btn gray'>Guardar nombre</button></form>
       <?php elseif($estateManageMode==='delete'): ?>
         <form method='post' onsubmit='return confirm("¿Eliminar estamento seleccionado?")' style='margin-bottom:10px'><input type='hidden' name='action' value='delete_estate'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='emode' value='delete'><input type='hidden' name='estate_name' value='<?= htmlspecialchars($estateFilter) ?>'><button class='btn danger'>Eliminar estamento actual (<?= htmlspecialchars($estateFilter) ?>)</button></form>
       <?php endif; ?>
       <?php endif; ?>
       <?php if(!empty($estates)): ?><div style='display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px'>
         <form method='post'>
-          <input type='hidden' name='action' value='send_pending_bulk'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
+          <input type='hidden' name='action' value='send_pending_bulk'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'>
           <button class='btn gray'>Enviar pendientes</button>
         </form>
         <form method='post'>
-          <input type='hidden' name='action' value='send_unanswered_reminders'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
+          <input type='hidden' name='action' value='send_unanswered_reminders'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'>
           <button class='btn gray'>Recordar no contestados</button>
         </form>
         <a class='btn' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($estateFilter) ?>&add=1&emode=<?= urlencode($estateManageMode) ?>'>+ Agregar</a></div>
@@ -727,10 +735,10 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
             <td><?= (!empty($p['responded_at']) || (int)($p['has_used_token'] ?? 0) === 1) ? 'Contestado' : 'No contestado' ?></td>
             <td>
               <div style='display:flex;gap:6px;flex-wrap:wrap'>
-                <form method='post'><input type='hidden' name='action' value='send_email'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><button class='btn gray'>Enviar</button></form>
-                <form method='post'><input type='hidden' name='action' value='resend_email'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><button class='btn gray'>Reenviar</button></form>
-                <form method='post'><input type='hidden' name='action' value='send_reminder'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><button class='btn gray'>Recordatorio</button></form>
-                <form method='post' onsubmit='return confirm("¿Eliminar?")'><input type='hidden' name='action' value='delete_participant'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><button class='btn danger'>Eliminar</button></form>
+                <form method='post'><input type='hidden' name='action' value='send_email'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'><button class='btn gray'>Enviar</button></form>
+                <form method='post'><input type='hidden' name='action' value='resend_email'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'><button class='btn gray'>Reenviar</button></form>
+                <form method='post'><input type='hidden' name='action' value='send_reminder'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'><button class='btn gray'>Recordatorio</button></form>
+                <form method='post' onsubmit='return confirm("¿Eliminar?")'><input type='hidden' name='action' value='delete_participant'><input type='hidden' name='participant_id' value='<?= (int)$p['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'><button class='btn danger'>Eliminar</button></form>
               </div>
             </td>
           </tr>
@@ -746,7 +754,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
                 <input type='hidden' name='action' value='create_participant'>
                 <input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'>
                 <input type='hidden' name='tab' value='participantes'>
-                <input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
+                <input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'>
                 <button class='btn'>OK</button>
                 <a class='btn gray' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($estateFilter) ?>'>X</a>
               </td>
@@ -781,7 +789,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         <input type='hidden' name='action' value='save_template'>
         <input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'>
         <input type='hidden' name='tab' value='comunicaciones'>
-        <input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
+        <input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'>
         <input type='hidden' name='template_type' value='<?= $currentTpl ?>'>
         <input type='hidden' name='tpl' value='<?= $currentTpl ?>'>
         <label>Asunto</label><input id='mail-subject' name='subject' value='<?= htmlspecialchars((string)($tplData['subject'] ?? '')) ?>' required>
@@ -793,7 +801,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
             <input type='hidden' name='action' value='approve_template'>
             <input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'>
             <input type='hidden' name='tab' value='comunicaciones'>
-            <input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
+            <input type='hidden' name='estate' value='<?= htmlspecialchars($activeQEstate) ?>'>
             <input type='hidden' name='template_type' value='<?= $currentTpl ?>'>
             <input type='hidden' name='tpl' value='<?= $currentTpl ?>'>
             <button class='btn gray'>Aprobar</button>
