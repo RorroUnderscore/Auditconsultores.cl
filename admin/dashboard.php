@@ -14,11 +14,11 @@ $estateFilter = (string)($_GET['estate'] ?? 'Directivos');
 $questionnaireMode = (string)($_GET['qmode'] ?? '');
 $resultView = (string)($_GET['rview'] ?? 'charts');
 $resultEstate = (string)($_GET['rest'] ?? 'Directivos');
+$estateManageMode = (string)($_GET['emode'] ?? '');
 $addMode = isset($_GET['add']) ? (int)$_GET['add'] === 1 : false;
 $selectedInstitutionId = isset($_GET['institution_id']) ? (int)$_GET['institution_id'] : 0;
 $flashError = $_SESSION['flash_error'] ?? '';
 unset($_SESSION['flash_error']);
-$estateFilter = in_array($estateFilter, $estates, true) ? $estateFilter : 'Directivos';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $action = $_POST['action'] ?? '';
@@ -55,6 +55,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $countStmt->execute([$institutionId]);
       if ((int)$countStmt->fetchColumn() >= 10) throw new RuntimeException('Máximo 10 estamentos por institución');
       $pdo->prepare('INSERT INTO institution_estates(institution_id,name,created_at) VALUES (?,?,?)')->execute([$institutionId, $name, date('c')]);
+    } elseif ($action === 'rename_estate') {
+      $institutionId = (int)$_POST['institution_id']; $old = trim((string)$_POST['old_estate']); $new = trim((string)$_POST['new_estate']);
+      if ($new === '') throw new RuntimeException('Nuevo nombre requerido');
+      $pdo->prepare('UPDATE institution_estates SET name=? WHERE institution_id=? AND name=?')->execute([$new, $institutionId, $old]);
+      $pdo->prepare('UPDATE participants SET estate=? WHERE institution_id=? AND estate=?')->execute([$new, $institutionId, $old]);
+      $pdo->prepare('UPDATE questionnaire_questions SET estate=? WHERE estate=?')->execute([$new, $old]);
+    } elseif ($action === 'delete_estate') {
+      $institutionId = (int)$_POST['institution_id']; $name = trim((string)$_POST['estate_name']);
+      $pdo->prepare('DELETE FROM institution_estates WHERE institution_id=? AND name=?')->execute([$institutionId, $name]);
     } elseif ($action === 'delete_participant') {
       $pdo->prepare('DELETE FROM participants WHERE id=?')->execute([(int)$_POST['participant_id']]);
     } elseif ($action === 'send_email') {
@@ -197,6 +206,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $redirect .= '?institution_id=' . (int)$_POST['institution_id'] . '&tab=' . urlencode((string)($_POST['tab'] ?? 'datos'));
     if (!empty($_POST['tpl'])) $redirect .= '&tpl=' . urlencode((string)$_POST['tpl']);
     if (!empty($_POST['estate'])) $redirect .= '&estate=' . urlencode((string)$_POST['estate']);
+    if (!empty($_POST['emode'])) $redirect .= '&emode=' . urlencode((string)$_POST['emode']);
     if (!empty($_POST['qmode'])) $redirect .= '&qmode=' . urlencode((string)$_POST['qmode']);
     if (($action === 'q_save' || $action === 'q_publish') && (string)($_POST['tab'] ?? '') === 'cuestionarios') $redirect = '/admin/dashboard.php?institution_id=' . (int)$_POST['institution_id'] . '&tab=cuestionarios&qmode=institution_editor';
   }
@@ -249,6 +259,7 @@ if ($selectedInstitutionId > 0) {
     $eStmt->execute([$selectedInstitutionId]);
     $dbEstates = array_map(fn($r)=>(string)$r['name'], $eStmt->fetchAll(PDO::FETCH_ASSOC));
     if ($dbEstates) { $estates = $dbEstates; $estateFilter = in_array($estateFilter, $estates, true) ? $estateFilter : $estates[0]; $participantCounts = array_fill_keys($estates, 0); foreach ($allParticipants as $p) if(isset($participantCounts[$p['estate']])) $participantCounts[$p['estate']]++; $participants = array_values(array_filter($allParticipants, fn($p) => ($p['estate'] ?? '') === $estateFilter)); }
+    else { $estates = []; $participants = []; $participantCounts = []; }
 
     $tStmt = $pdo->prepare('SELECT template_type, estate, subject, body, is_approved FROM communication_templates WHERE institution_id=?');
     $tStmt->execute([$selectedInstitutionId]);
@@ -582,10 +593,23 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         <div style='flex:1'><label>Crear estamento (máx. 10)</label><input name='estate_name' placeholder='Ej: Asistentes de aula'></div>
         <button class='btn gray' type='submit'>Agregar estamento</button>
       </form>
+      <?php if(empty($estates)): ?>
+        <div class='empty' style='margin-bottom:10px'>No hay estamentos registrados. Crea uno para comenzar a gestionar participantes.</div>
+      <?php else: ?>
       <div class='chips' style='margin-bottom:10px'>
-        <?php foreach($estates as $e): ?><a class='chip <?= $estateFilter===$e?'active':'' ?>' style='<?= $estateFilter===$e?'background:'.$colors[$e].';border-color:'.$colors[$e].';color:#fff;':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($e) ?>'><?= $e ?> (<?= (int)$participantCounts[$e] ?>)</a><?php endforeach; ?>
+        <?php foreach($estates as $e): ?><a class='chip <?= $estateFilter===$e?'active':'' ?>' style='<?= $estateFilter===$e?'background:'.$colors[$e].';border-color:'.$colors[$e].';color:#fff;':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($e) ?>&emode=<?= urlencode($estateManageMode) ?>'><?= $e ?> (<?= (int)($participantCounts[$e]??0) ?>)</a><?php endforeach; ?>
       </div>
-      <div style='display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px'>
+      <div class='chips' style='margin-bottom:10px'>
+        <a class='chip <?= $estateManageMode==='rename'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($estateFilter) ?>&emode=<?= $estateManageMode==='rename'?'': 'rename' ?>'>✏️ Modificar estamento</a>
+        <a class='chip <?= $estateManageMode==='delete'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($estateFilter) ?>&emode=<?= $estateManageMode==='delete'?'': 'delete' ?>'>🗑️ Eliminar estamento</a>
+      </div>
+      <?php if($estateManageMode==='rename'): ?>
+        <form method='post' style='display:flex;gap:8px;align-items:end;margin-bottom:10px'><input type='hidden' name='action' value='rename_estate'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='emode' value='rename'><input type='hidden' name='old_estate' value='<?= htmlspecialchars($estateFilter) ?>'><div style='flex:1'><label>Renombrar estamento actual (<?= htmlspecialchars($estateFilter) ?>)</label><input name='new_estate' required></div><button class='btn gray'>Guardar nombre</button></form>
+      <?php elseif($estateManageMode==='delete'): ?>
+        <form method='post' onsubmit='return confirm("¿Eliminar estamento seleccionado?")' style='margin-bottom:10px'><input type='hidden' name='action' value='delete_estate'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='emode' value='delete'><input type='hidden' name='estate_name' value='<?= htmlspecialchars($estateFilter) ?>'><button class='btn danger'>Eliminar estamento actual (<?= htmlspecialchars($estateFilter) ?>)</button></form>
+      <?php endif; ?>
+      <?php endif; ?>
+      <?php if(!empty($estates)): ?><div style='display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px'>
         <form method='post'>
           <input type='hidden' name='action' value='send_pending_bulk'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
           <button class='btn gray'>Enviar pendientes</button>
@@ -594,7 +618,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
           <input type='hidden' name='action' value='send_unanswered_reminders'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='participantes'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'>
           <button class='btn gray'>Recordar no contestados</button>
         </form>
-        <a class='btn' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($estateFilter) ?>&add=1'>+ Agregar</a></div>
+        <a class='btn' href='?institution_id=<?= (int)$selectedInstitution['id'] ?>&tab=participantes&estate=<?= urlencode($estateFilter) ?>&add=1&emode=<?= urlencode($estateManageMode) ?>'>+ Agregar</a></div>
       <table>
         <thead><tr><th>Nombre</th><th>Apellido</th><th>Mail</th><th>Estado correo</th><th>Estado cuestionario</th><th>Acciones</th></tr></thead>
         <tbody>
@@ -635,6 +659,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
           <?php endif; ?>
         </tbody>
       </table>
+      <?php endif; ?>
     </div></section>
   <?php elseif($tab==='comunicaciones'): ?>
 
