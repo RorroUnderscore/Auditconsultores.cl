@@ -222,6 +222,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $current[] = $name;
       $_SESSION['q_builder']['estates'] = $current;
       $_SESSION['q_builder']['questions'][$name] = $_SESSION['q_builder']['questions'][$name] ?? [];
+      $institutionId = (int)($_POST['institution_id'] ?? 0);
+      if ($institutionId > 0) $existsEstate=$pdo->prepare('SELECT id FROM institution_estates WHERE institution_id=? AND name=? LIMIT 1'); $existsEstate->execute([$institutionId,$name]); if(!$existsEstate->fetchColumn()) $pdo->prepare('INSERT INTO institution_estates(institution_id,name,created_at) VALUES (?,?,?)')->execute([$institutionId, $name, date('c')]);
     } elseif ($action === 'q_rename_estate') {
       $old = trim((string)($_POST['old_estate_name'] ?? ''));
       $new = trim((string)($_POST['new_estate_name'] ?? ''));
@@ -235,11 +237,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($old !== $new) {
         $_SESSION['q_builder']['questions'][$new] = $_SESSION['q_builder']['questions'][$old] ?? [];
         unset($_SESSION['q_builder']['questions'][$old]);
+        $institutionId = (int)($_POST['institution_id'] ?? 0);
+        if ($institutionId > 0) {
+          $pdo->prepare('UPDATE institution_estates SET name=? WHERE institution_id=? AND name=?')->execute([$new,$institutionId,$old]);
+          $pdo->prepare('UPDATE participants SET estate=? WHERE institution_id=? AND estate=?')->execute([$new,$institutionId,$old]);
+          $pdo->prepare('UPDATE communication_templates SET estate=? WHERE institution_id=? AND estate=?')->execute([$new,$institutionId,$old]);
+        }
       }
     } elseif ($action === 'q_delete_estate') {
       $name = trim((string)($_POST['estate_name'] ?? ''));
       $_SESSION['q_builder']['estates'] = array_values(array_filter($_SESSION['q_builder']['estates'] ?? [], fn($e)=>$e!==$name));
       unset($_SESSION['q_builder']['questions'][$name]);
+      $institutionId = (int)($_POST['institution_id'] ?? 0);
+      if ($institutionId > 0) {
+        $projectId = resolveProjectId($pdo, $institutionId);
+        $pdo->prepare('DELETE FROM participants WHERE institution_id=? AND project_id=? AND estate=?')->execute([$institutionId,$projectId,$name]);
+        $pdo->prepare('DELETE FROM communication_templates WHERE institution_id=? AND estate=?')->execute([$institutionId,$name]);
+        $pdo->prepare('DELETE FROM institution_estates WHERE institution_id=? AND name=?')->execute([$institutionId,$name]);
+      }
     } elseif ($action === 'q_add_question') {
       $estate = (string)$_POST['estate']; $text = trim((string)$_POST['question_text']); $category = trim((string)($_POST['question_category'] ?? ''));
       if ($text !== '' && in_array($estate, $_SESSION['q_builder']['estates'] ?? [], true)) $_SESSION['q_builder']['questions'][$estate][] = ['text'=>$text,'category'=>$category];
@@ -269,6 +284,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'q_discard_all') {
       $institutionId = (int)$_POST['institution_id']; $projectId = resolveProjectId($pdo, $institutionId);
       $pdo->prepare('DELETE FROM questionnaires WHERE institution_id=? AND project_id=?')->execute([$institutionId, $projectId]);
+      $pdo->prepare('DELETE FROM participants WHERE institution_id=? AND project_id=?')->execute([$institutionId, $projectId]);
+      $pdo->prepare('DELETE FROM communication_templates WHERE institution_id=?')->execute([$institutionId]);
+      $pdo->prepare('DELETE FROM institution_estates WHERE institution_id=?')->execute([$institutionId]);
       $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'estates' => [], 'questions' => []];
     } elseif ($action === 'qtpl_delete_template') {
       $templateId = (int)$_POST['template_id'];
