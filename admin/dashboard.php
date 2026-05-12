@@ -219,7 +219,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->prepare('DELETE FROM questionnaires WHERE institution_id=? AND project_id=?')->execute([$institutionId, $projectId]);
       $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => initEstateQuestionMap($estates)];
     } elseif ($action === 'qtpl_delete_template') {
-      $pdo->prepare('DELETE FROM questionnaire_templates WHERE id=?')->execute([(int)$_POST['template_id']]);
+      $templateId = (int)$_POST['template_id'];
+      $pdo->beginTransaction();
+      $pdo->prepare('UPDATE questionnaires SET source_template_id=NULL WHERE source_template_id=?')->execute([$templateId]);
+      $pdo->prepare('DELETE FROM questionnaire_template_questions WHERE template_id=?')->execute([$templateId]);
+      $pdo->prepare('DELETE FROM questionnaire_templates WHERE id=?')->execute([$templateId]);
+      $pdo->commit();
+      $currentTplBuilderName = (string)($_SESSION['qtpl_builder']['name'] ?? '');
+      if ($currentTplBuilderName !== '' && isset($_GET['template_id']) && (int)$_GET['template_id'] === $templateId) $_SESSION['qtpl_builder'] = ['name' => '', 'estates' => [], 'questions' => []];
     } elseif ($action === 'export_results_excel') {
       $institutionId = (int)$_POST['institution_id'];
       exportResultsExcel($pdo, $institutionId);
@@ -551,7 +558,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         <?php $allTemplates = $pdo->query('SELECT id, name FROM questionnaire_templates ORDER BY id DESC')->fetchAll(PDO::FETCH_ASSOC); ?>
         <div style='margin-top:10px'><?php foreach($allTemplates as $tpl): ?>
           <?php if($questionnaireMode==='edit_template'): ?><a class='chip' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=create_template&template_id=<?= (int)$tpl['id'] ?>'>Modificar: <?= htmlspecialchars((string)$tpl['name']) ?></a>
-          <?php else: ?><form method='post' style='display:inline-block;margin:0 8px 8px 0' onsubmit='return confirm("¿Eliminar plantilla?")'><input type='hidden' name='action' value='qtpl_delete_template'><input type='hidden' name='template_id' value='<?= (int)$tpl['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='delete_template'><button class='btn danger'>Eliminar: <?= htmlspecialchars((string)$tpl['name']) ?></button></form><?php endif; ?>
+          <?php else: ?><form method='post' style='display:inline-block;margin:0 8px 8px 0' onsubmit='return confirm("¿Eliminar plantilla y todas sus preguntas asociadas? Esta acción no se puede deshacer.")'><input type='hidden' name='action' value='qtpl_delete_template'><input type='hidden' name='template_id' value='<?= (int)$tpl['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='delete_template'><button class='btn danger'>Eliminar: <?= htmlspecialchars((string)$tpl['name']) ?></button></form><?php endif; ?>
         <?php endforeach; ?></div>
       <?php elseif($questionnaireMode==='create_template'): ?>
         <div style='display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap'>
