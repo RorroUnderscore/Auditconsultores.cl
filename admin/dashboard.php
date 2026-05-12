@@ -165,11 +165,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => initEstateQuestionMap($estates)];
     } elseif ($action === 'q_load_template') {
       $templateId = (int)$_POST['template_id'];
+      $institutionId = (int)$_POST['institution_id'];
+      $projectId = resolveProjectId($pdo, $institutionId);
       $stmt = $pdo->prepare('SELECT id, name FROM questionnaire_templates WHERE id=? LIMIT 1'); $stmt->execute([$templateId]); $tpl = $stmt->fetch(PDO::FETCH_ASSOC);
       if (!$tpl) throw new RuntimeException('Plantilla no encontrada');
-      $qs = initEstateQuestionMap($estates);
+      $qs = []; $templateEstates = [];
       $qStmt = $pdo->prepare('SELECT estate, question_text FROM questionnaire_template_questions WHERE template_id=? ORDER BY estate, q_order ASC'); $qStmt->execute([$templateId]);
-      foreach ($qStmt->fetchAll(PDO::FETCH_ASSOC) as $row) if (isset($qs[$row['estate']])) $qs[$row['estate']][] = (string)$row['question_text'];
+      foreach ($qStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $estateName = (string)$row['estate'];
+        if (!isset($qs[$estateName])) { $qs[$estateName] = []; $templateEstates[] = $estateName; }
+        $qText = (string)$row['question_text'];
+        $cat = '';
+        if (preg_match('/^\[(.*?)\]\s*(.*)$/', $qText, $m)) { $cat = (string)$m[1]; $qText = (string)$m[2]; }
+        $qs[$estateName][] = ['text' => $qText, 'category' => $cat];
+      }
+      if (count($templateEstates) < 1) throw new RuntimeException('La plantilla no contiene estamentos configurados');
+      $pdo->beginTransaction();
+      $pdo->prepare('DELETE FROM participants WHERE institution_id=? AND project_id=?')->execute([$institutionId, $projectId]);
+      $pdo->prepare('DELETE FROM institution_estates WHERE institution_id=?')->execute([$institutionId]);
+      $insEstate = $pdo->prepare('INSERT INTO institution_estates(institution_id, name, created_at) VALUES (?,?,?)');
+      foreach ($templateEstates as $estateName) $insEstate->execute([$institutionId, $estateName, date('c')]);
+      $pdo->commit();
       $_SESSION['q_builder'] = ['name' => (string)$tpl['name'], 'source_template_id' => $templateId, 'status' => 'draft', 'enable_comments' => 0, 'questions' => $qs];
     } elseif ($action === 'q_set_comments') {
       $_SESSION['q_builder']['enable_comments'] = isset($_POST['enable_comments']) ? 1 : 0;
@@ -570,8 +586,8 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         <?php $allTemplates = $pdo->query('SELECT id, name FROM questionnaire_templates ORDER BY id DESC')->fetchAll(PDO::FETCH_ASSOC); ?>
         <div style='margin-top:10px'>
           <?php foreach($allTemplates as $tpl): ?>
-            <form method='post' style='display:inline-block;margin:0 8px 8px 0'>
-              <input type='hidden' name='action' value='q_load_template'><input type='hidden' name='template_id' value='<?= (int)$tpl['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='institution_editor'>
+            <form method='post' style='display:inline-block;margin:0 8px 8px 0' onsubmit='return confirm("Se eliminarán participantes y estamentos actuales de la institución. ¿Continuar?")'>
+              <input type='hidden' name='action' value='q_load_template'><input type='hidden' name='template_id' value='<?= (int)$tpl['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='use_template'>
               <button class='chip'><?= htmlspecialchars((string)$tpl['name']) ?></button>
             </form>
           <?php endforeach; ?>
