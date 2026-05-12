@@ -16,9 +16,20 @@ $qzStmt->execute([(int)$ctx['institution_id'], (int)$ctx['project_id']]);
 $questionnaire = $qzStmt->fetch(PDO::FETCH_ASSOC);
 $questions = [];
 if ($questionnaire) {
-  $qStmt = $pdo->prepare('SELECT id,question_text,q_order FROM questionnaire_questions WHERE questionnaire_id=? AND estate=? ORDER BY q_order,id');
-  $qStmt->execute([(int)$questionnaire['id'], (string)$ctx['estate']]);
+  $estate = trim((string)$ctx['estate']);
+  $qStmt = $pdo->prepare('SELECT id,question_text,q_order FROM questionnaire_questions WHERE questionnaire_id=? AND TRIM(estate)=? ORDER BY q_order,id');
+  $qStmt->execute([(int)$questionnaire['id'], $estate]);
   $questions = $qStmt->fetchAll(PDO::FETCH_ASSOC);
+  if (count($questions) === 0) {
+    $qStmt = $pdo->prepare('SELECT id,question_text,q_order FROM questionnaire_questions WHERE questionnaire_id=? AND LOWER(TRIM(estate))=LOWER(TRIM(?)) ORDER BY q_order,id');
+    $qStmt->execute([(int)$questionnaire['id'], $estate]);
+    $questions = $qStmt->fetchAll(PDO::FETCH_ASSOC);
+  }
+  if (count($questions) === 0) {
+    $qStmt = $pdo->prepare('SELECT id,question_text,q_order FROM questionnaire_questions WHERE questionnaire_id=? ORDER BY estate,q_order,id');
+    $qStmt->execute([(int)$questionnaire['id']]);
+    $questions = $qStmt->fetchAll(PDO::FETCH_ASSOC);
+  }
 }
 $msg=''; $err='';
 if ($_SERVER['REQUEST_METHOD']==='POST') {
@@ -55,9 +66,9 @@ h1{margin:0 0 8px;font-size:32px}.muted{color:var(--muted)}.q{margin:14px 0;padd
 textarea{width:100%;min-height:110px;padding:12px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--text)}
 button[type='submit']{margin-top:14px;background:linear-gradient(90deg,var(--brand),var(--brand2));color:#fff;border:none;padding:12px 18px;border-radius:12px;font-weight:700;cursor:pointer}
 .msg{padding:10px 12px;border-radius:10px;margin:12px 0}.ok{color:var(--ok);background:var(--okbg)}.err{color:var(--err);background:var(--errbg)}
-</style></head><body><div class='wrap'><div class='top'><small class='muted'>Plataforma de Diagnóstico Institucional</small><button class='toggle' type='button' onclick='toggleTheme()'>🌗 Tema</button></div><div class='box'><h1><?= htmlspecialchars((string)$ctx['estate']) ?></h1><p class='muted'><?= htmlspecialchars((string)($questionnaire['name'] ?? 'Cuestionario')) ?> · <?= htmlspecialchars((string)$ctx['institution_name']) ?></p><p>Participante: <strong><?= htmlspecialchars((string)$ctx['participant_name'].' ('.$ctx['email'].')') ?></strong></p>
+</style></head><body><div class='wrap'><div class='top'><small class='muted'>Plataforma de Diagnostico Institucional</small><button class='toggle' type='button' onclick='toggleTheme()'>🌗 Tema</button></div><div class='box'><h1><?= htmlspecialchars((string)$ctx['estate']) ?></h1><p class='muted'><?= htmlspecialchars((string)($questionnaire['name'] ?? 'Cuestionario')) ?> · <?= htmlspecialchars((string)$ctx['institution_name']) ?></p><p>Participante: <strong><?= htmlspecialchars((string)$ctx['participant_name'].' ('.$ctx['email'].')') ?></strong></p>
 <?php if ($msg): ?><p class='msg ok'><?= htmlspecialchars($msg) ?></p><?php endif; ?>
 <?php if ($err): ?><p class='msg err'><?= htmlspecialchars($err) ?></p><?php endif; ?>
 <?php if (!empty($ctx['used_at'])): ?><p class='msg ok'>Esta encuesta ya fue respondida el <?= htmlspecialchars((string)$ctx['used_at']) ?>.</p>
 <?php elseif (!$questionnaire): ?><p class='err'>Encuesta no disponible.</p>
-<?php else: ?><form method='post'><?php foreach($questions as $q): ?><div class='q'><p><strong><?= (int)$q['q_order'] ?>.</strong> <?= htmlspecialchars((string)$q['question_text']) ?></p><div class='scale'><?php for($v=1;$v<=5;$v++): ?><label><input type='radio' name='q<?= (int)$q['id'] ?>' value='<?= $v ?>' required> <?= $v ?></label><?php endfor; ?></div></div><?php endforeach; ?><p class='muted'><small>1 Muy en desacuerdo · 2 En desacuerdo · 3 Neutro · 4 De acuerdo · 5 Muy de acuerdo</small></p><?php if(!empty($questionnaire['enable_comments'])): ?><div class='q'><label>Comentario opcional</label><textarea name='comment' rows='4' placeholder='Escribe aquí tu comentario (opcional)'></textarea></div><?php endif; ?><button type='submit'>Enviar respuestas</button></form><?php endif; ?></div></div><script>const key='survey_theme';const pref=localStorage.getItem(key);if(pref)document.documentElement.setAttribute('data-theme',pref);function toggleTheme(){const c=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',c);localStorage.setItem(key,c);}</script></body></html>
+<?php else: ?><form method='post'><?php foreach($questions as $q): ?><div class='q'><p><strong><?= (int)$q['q_order'] ?>.</strong> <?= htmlspecialchars((string)$q['question_text']) ?></p><div class='scale'><?php for($v=1;$v<=5;$v++): ?><label><input type='radio' name='q<?= (int)$q['id'] ?>' value='<?= $v ?>' required> <?= $v ?></label><?php endfor; ?></div></div><?php endforeach; ?><p class='muted'><small>1 Muy en desacuerdo - 2 En desacuerdo - 3 Neutro - 4 De acuerdo - 5 Muy de acuerdo</small></p><?php if(!empty($questionnaire['enable_comments'])): ?><div class='q'><label>Comentario opcional</label><textarea name='comment' rows='4' placeholder='Escribe aquí tu comentario (opcional)'></textarea></div><?php endif; ?><button type='submit'>Enviar respuestas</button></form><?php endif; ?></div></div><script>const key='survey_theme';const pref=localStorage.getItem(key);if(pref)document.documentElement.setAttribute('data-theme',pref);function toggleTheme(){const c=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',c);localStorage.setItem(key,c);}</script></body></html>
