@@ -425,8 +425,22 @@ function initEstateQuestionMap(array $estates): array {
   foreach ($estates as $e) $out[(string)$e] = [];
   return $out;
 }
-function qText($q): string { return is_array($q) ? (string)($q['text'] ?? '') : (string)$q; }
-function qCategory($q): string { return is_array($q) ? (string)($q['category'] ?? '') : ''; }
+function qText($q): string {
+  if (is_array($q)) return (string)($q['text'] ?? '');
+  $raw = (string)$q;
+  $decoded = json_decode($raw, true);
+  if (is_array($decoded)) return (string)($decoded['text'] ?? '');
+  if (preg_match('/^\[(.*?)\]\s*(.*)$/', $raw, $m)) return (string)$m[2];
+  return $raw;
+}
+function qCategory($q): string {
+  if (is_array($q)) return (string)($q['category'] ?? '');
+  $raw = (string)$q;
+  $decoded = json_decode($raw, true);
+  if (is_array($decoded)) return (string)($decoded['category'] ?? '');
+  if (preg_match('/^\[(.*?)\]\s*(.*)$/', $raw, $m)) return (string)$m[1];
+  return '';
+}
 function estateColorByIndex(int $i): string {
   $palette = ['#4f46e5','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6','#14b8a6','#eab308','#06b6d4','#22c55e'];
   return $palette[$i % count($palette)];
