@@ -425,22 +425,18 @@ function initEstateQuestionMap(array $estates): array {
   foreach ($estates as $e) $out[(string)$e] = [];
   return $out;
 }
-function qText($q): string {
-  if (is_array($q)) return (string)($q['text'] ?? '');
-  $raw = (string)$q;
+function decodeTemplateQuestion($q): array {
+  if (is_array($q)) return ['text' => (string)($q['text'] ?? ''), 'category' => (string)($q['category'] ?? '')];
+  $raw = trim((string)$q);
+  if ($raw === '') return ['text' => '', 'category' => ''];
   $decoded = json_decode($raw, true);
-  if (is_array($decoded)) return (string)($decoded['text'] ?? '');
-  if (preg_match('/^\[(.*?)\]\s*(.*)$/', $raw, $m)) return (string)$m[2];
-  return $raw;
+  if (is_string($decoded)) $decoded = json_decode($decoded, true);
+  if (is_array($decoded)) return ['text' => (string)($decoded['text'] ?? ''), 'category' => (string)($decoded['category'] ?? '')];
+  if (preg_match('/^\[(.*?)\]\s*(.*)$/', $raw, $m)) return ['text' => (string)$m[2], 'category' => (string)$m[1]];
+  return ['text' => $raw, 'category' => ''];
 }
-function qCategory($q): string {
-  if (is_array($q)) return (string)($q['category'] ?? '');
-  $raw = (string)$q;
-  $decoded = json_decode($raw, true);
-  if (is_array($decoded)) return (string)($decoded['category'] ?? '');
-  if (preg_match('/^\[(.*?)\]\s*(.*)$/', $raw, $m)) return (string)$m[1];
-  return '';
-}
+function qText($q): string { $d = decodeTemplateQuestion($q); return (string)$d['text']; }
+function qCategory($q): string { $d = decodeTemplateQuestion($q); return (string)$d['category']; }
 function estateColorByIndex(int $i): string {
   $palette = ['#4f46e5','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6','#14b8a6','#eab308','#06b6d4','#22c55e'];
   return $palette[$i % count($palette)];
