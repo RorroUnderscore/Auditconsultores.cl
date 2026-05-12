@@ -11,7 +11,7 @@ $stmt->execute([$token]);
 $ctx = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$ctx) { http_response_code(404); echo 'Token inválido'; exit; }
 
-$qzStmt = $pdo->prepare("SELECT * FROM questionnaires WHERE institution_id=? AND project_id=? AND status='published' ORDER BY id DESC LIMIT 1");
+$qzStmt = $pdo->prepare("SELECT * FROM questionnaires WHERE institution_id=? AND project_id=? ORDER BY CASE WHEN status='published' THEN 0 WHEN status='draft' THEN 1 ELSE 2 END, id DESC LIMIT 1");
 $qzStmt->execute([(int)$ctx['institution_id'], (int)$ctx['project_id']]);
 $questionnaire = $qzStmt->fetch(PDO::FETCH_ASSOC);
 $questions = [];
@@ -66,7 +66,7 @@ h1{margin:0 0 8px;font-size:32px}.muted{color:var(--muted)}.q{margin:14px 0;padd
 textarea{width:100%;min-height:110px;padding:12px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--text)}
 button[type='submit']{margin-top:14px;background:linear-gradient(90deg,var(--brand),var(--brand2));color:#fff;border:none;padding:12px 18px;border-radius:12px;font-weight:700;cursor:pointer}
 .msg{padding:10px 12px;border-radius:10px;margin:12px 0}.ok{color:var(--ok);background:var(--okbg)}.err{color:var(--err);background:var(--errbg)}
-</style></head><body><div class='wrap'><div class='top'><small class='muted'>Plataforma de Diagnostico Institucional</small><button class='toggle' type='button' onclick='toggleTheme()'>🌗 Tema</button></div><div class='box'><h1><?= htmlspecialchars((string)$ctx['estate']) ?></h1><p class='muted'><?= htmlspecialchars((string)($questionnaire['name'] ?? 'Cuestionario')) ?> · <?= htmlspecialchars((string)$ctx['institution_name']) ?></p><p>Participante: <strong><?= htmlspecialchars((string)$ctx['participant_name'].' ('.$ctx['email'].')') ?></strong></p>
+</style></head><body><div class='wrap'><div class='top'><small class='muted'>Plataforma de Diagnostico Institucional</small><button class='toggle' type='button' onclick='toggleTheme()'>Tema</button></div><div class='box'><h1><?= htmlspecialchars((string)$ctx['estate']) ?></h1><p class='muted'><?= htmlspecialchars((string)($questionnaire['name'] ?? 'Cuestionario')) ?> · <?= htmlspecialchars((string)$ctx['institution_name']) ?></p><p>Participante: <strong><?= htmlspecialchars((string)$ctx['participant_name'].' ('.$ctx['email'].')') ?></strong></p>
 <?php if ($msg): ?><p class='msg ok'><?= htmlspecialchars($msg) ?></p><?php endif; ?>
 <?php if ($err): ?><p class='msg err'><?= htmlspecialchars($err) ?></p><?php endif; ?>
 <?php if (!empty($ctx['used_at'])): ?><p class='msg ok'>Esta encuesta ya fue respondida el <?= htmlspecialchars((string)$ctx['used_at']) ?>.</p>
