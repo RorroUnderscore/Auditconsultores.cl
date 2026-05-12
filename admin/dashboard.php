@@ -117,36 +117,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $estate = (string)($_POST['estate'] ?? 'General');
       $pdo->prepare('UPDATE communication_templates SET is_approved=1, approved_at=? WHERE institution_id=? AND template_type=? AND estate=?')->execute([date('c'), $institutionId, $type, $estate]);
     } elseif ($action === 'qtpl_reset') {
-      $_SESSION['qtpl_builder'] = ['name' => '', 'questions' => initEstateQuestionMap($estates)];
+      $_SESSION['qtpl_builder'] = ['name' => '', 'estates' => [], 'questions' => []];
+    } elseif ($action === 'qtpl_add_estate') {
+      $name = trim((string)($_POST['estate_name'] ?? ''));
+      $current = $_SESSION['qtpl_builder']['estates'] ?? [];
+      if ($name === '') throw new RuntimeException('Nombre de estamento requerido');
+      if (in_array($name, $current, true)) throw new RuntimeException('El estamento ya existe en esta plantilla');
+      $current[] = $name;
+      $_SESSION['qtpl_builder']['estates'] = $current;
+      $_SESSION['qtpl_builder']['questions'][$name] = $_SESSION['qtpl_builder']['questions'][$name] ?? [];
+    } elseif ($action === 'qtpl_delete_estate') {
+      $name = trim((string)($_POST['estate_name'] ?? ''));
+      $_SESSION['qtpl_builder']['estates'] = array_values(array_filter($_SESSION['qtpl_builder']['estates'] ?? [], fn($e)=>$e!==$name));
+      unset($_SESSION['qtpl_builder']['questions'][$name]);
     } elseif ($action === 'qtpl_add_question') {
-      $estate = (string)$_POST['estate']; $text = trim((string)$_POST['question_text']);
-      if ($text !== '' && in_array($estate, $estates, true)) $_SESSION['qtpl_builder']['questions'][$estate][] = $text;
+      $estate = (string)$_POST['estate']; $text = trim((string)$_POST['question_text']); $cat = trim((string)($_POST['question_category'] ?? ''));
+      if ($text !== '' && in_array($estate, $_SESSION['qtpl_builder']['estates'] ?? [], true)) $_SESSION['qtpl_builder']['questions'][$estate][] = ['text'=>$text,'category'=>$cat];
     } elseif ($action === 'qtpl_delete_question') {
       $estate = (string)$_POST['estate']; $idx = (int)$_POST['idx'];
       if (isset($_SESSION['qtpl_builder']['questions'][$estate][$idx])) array_splice($_SESSION['qtpl_builder']['questions'][$estate], $idx, 1);
     } elseif ($action === 'qtpl_update_question') {
       $estate = (string)$_POST['estate']; $idx = (int)$_POST['idx']; $text = trim((string)$_POST['question_text']);
-      if ($text !== '' && isset($_SESSION['qtpl_builder']['questions'][$estate][$idx])) $_SESSION['qtpl_builder']['questions'][$estate][$idx] = $text;
+      if ($text !== '' && isset($_SESSION['qtpl_builder']['questions'][$estate][$idx])) $_SESSION['qtpl_builder']['questions'][$estate][$idx] = ['text'=>$text,'category'=>trim((string)($_POST['question_category'] ?? ''))];
     } elseif ($action === 'qtpl_move_question') {
       $estate = (string)$_POST['estate']; $idx = (int)$_POST['idx']; $dir = (string)$_POST['direction'];
       $list = $_SESSION['qtpl_builder']['questions'][$estate] ?? []; $newIdx = $dir === 'up' ? $idx - 1 : $idx + 1;
       if (isset($list[$idx], $list[$newIdx])) { $tmp = $list[$idx]; $list[$idx] = $list[$newIdx]; $list[$newIdx] = $tmp; $_SESSION['qtpl_builder']['questions'][$estate] = array_values($list); }
     } elseif ($action === 'qtpl_inherit_questions') {
       $fromEstate = (string)$_POST['from_estate']; $toEstate = (string)$_POST['to_estate'];
-      if (in_array($fromEstate, $estates, true) && in_array($toEstate, $estates, true) && count($_SESSION['qtpl_builder']['questions'][$toEstate] ?? []) === 0) $_SESSION['qtpl_builder']['questions'][$toEstate] = $_SESSION['qtpl_builder']['questions'][$fromEstate] ?? [];
+      if (in_array($fromEstate, $_SESSION['qtpl_builder']['estates'] ?? [], true) && in_array($toEstate, $_SESSION['qtpl_builder']['estates'] ?? [], true) && count($_SESSION['qtpl_builder']['questions'][$toEstate] ?? []) === 0) $_SESSION['qtpl_builder']['questions'][$toEstate] = $_SESSION['qtpl_builder']['questions'][$fromEstate] ?? [];
     } elseif ($action === 'qtpl_save') {
       $builder = $_SESSION['qtpl_builder'] ?? []; $name = trim((string)($builder['name'] ?? '')); $questionsByEstate = $builder['questions'] ?? [];
       $name = trim((string)($_POST['template_name'] ?? $name));
       $_SESSION['qtpl_builder']['name'] = $name;
       if ($name === '') throw new RuntimeException('Nombre requerido');
-      foreach ($estates as $e) if (count($questionsByEstate[$e] ?? []) < 1) throw new RuntimeException("El estamento {$e} debe tener al menos una pregunta");
+      $tplEstates = $_SESSION['qtpl_builder']['estates'] ?? [];
+      if (count($tplEstates) < 1) throw new RuntimeException('Debes crear al menos un estamento para la plantilla');
+      foreach ($tplEstates as $e) if (count($questionsByEstate[$e] ?? []) < 1) throw new RuntimeException("El estamento {$e} debe tener al menos una pregunta");
       $pdo->beginTransaction();
       $pdo->prepare('INSERT INTO questionnaire_templates(name, created_at, updated_at) VALUES (?,?,?)')->execute([$name, date('c'), date('c')]);
       $tplId = (int)$pdo->lastInsertId();
       $ins = $pdo->prepare('INSERT INTO questionnaire_template_questions(template_id, estate, question_text, q_order) VALUES (?,?,?,?)');
-      foreach ($estates as $estate) foreach (($questionsByEstate[$estate] ?? []) as $i => $qText) $ins->execute([$tplId, $estate, $qText, $i + 1]);
+      foreach ($tplEstates as $estate) foreach (($questionsByEstate[$estate] ?? []) as $i => $qText) { $txt=is_array($qText)?(string)($qText['text']??''):(string)$qText; $cat=is_array($qText)?trim((string)($qText['category']??'')):''; $ins->execute([$tplId, $estate, ($cat!==''?"[$cat] ":"").$txt, $i + 1]); }
       $pdo->commit();
-      $_SESSION['qtpl_builder'] = ['name' => '', 'questions' => initEstateQuestionMap($estates)];
+      $_SESSION['qtpl_builder'] = ['name' => '', 'estates' => [], 'questions' => []];
     } elseif ($action === 'q_reset') {
       $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => initEstateQuestionMap($estates)];
     } elseif ($action === 'q_load_template') {
@@ -213,16 +227,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   header('Location: ' . $redirect);
   exit;
 }
-if (!isset($_SESSION['qtpl_builder'])) $_SESSION['qtpl_builder'] = ['name' => '', 'questions' => initEstateQuestionMap($estates)];
+if (!isset($_SESSION['qtpl_builder'])) $_SESSION['qtpl_builder'] = ['name' => '', 'estates' => [], 'questions' => []];
 $qtplBuilder = $_SESSION['qtpl_builder'];
 if ($tab === 'cuestionarios' && $questionnaireMode === 'create_template' && isset($_GET['template_id'])) {
   $templateId = (int)$_GET['template_id'];
   $t = $pdo->prepare('SELECT id,name FROM questionnaire_templates WHERE id=? LIMIT 1'); $t->execute([$templateId]); $tpl = $t->fetch(PDO::FETCH_ASSOC);
   if ($tpl) {
-    $qs=initEstateQuestionMap($estates);
-    $q = $pdo->prepare('SELECT estate,question_text FROM questionnaire_template_questions WHERE template_id=? ORDER BY q_order,id'); $q->execute([$templateId]);
-    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row) if(isset($qs[$row['estate']])) $qs[$row['estate']][]=(string)$row['question_text'];
-    $_SESSION['qtpl_builder']=['name'=>(string)$tpl['name'],'questions'=>$qs]; $qtplBuilder=$_SESSION['qtpl_builder'];
+    $qs=[]; $tEstates=[];
+    $q = $pdo->prepare('SELECT estate,question_text FROM questionnaire_template_questions WHERE template_id=? ORDER BY estate,q_order,id'); $q->execute([$templateId]);
+    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){ $e=(string)$row['estate']; if(!isset($qs[$e])){$qs[$e]=[]; $tEstates[]=$e;} $txt=(string)$row['question_text']; $cat=''; if(preg_match('/^\\[(.*?)\\]\\s*(.*)$/',$txt,$m)){ $cat=$m[1]; $txt=$m[2]; } $qs[$e][]=['text'=>$txt,'category'=>$cat]; }
+    $_SESSION['qtpl_builder']=['name'=>(string)$tpl['name'],'estates'=>$tEstates,'questions'=>$qs]; $qtplBuilder=$_SESSION['qtpl_builder'];
   }
 }
 if (!isset($_SESSION['q_builder'])) $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'questions' => initEstateQuestionMap($estates)];
