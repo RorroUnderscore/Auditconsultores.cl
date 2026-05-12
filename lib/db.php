@@ -104,7 +104,34 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS invitation_tokens (id $idCol, participant
     safeExec($pdo, "ALTER TABLE responses ADD COLUMN comment $longText NULL");
 $pdo->exec("CREATE TABLE IF NOT EXISTS response_answers (id $idCol, response_id INT NOT NULL, question_id INT NOT NULL, value INT NOT NULL, FOREIGN KEY(response_id) REFERENCES responses(id), FOREIGN KEY(question_id) REFERENCES questions(id))");
 
+    normalizeCommunicationTemplateConstraint($pdo, $driver);
     seedDefaultAdmin($pdo);
+}
+
+
+function normalizeCommunicationTemplateConstraint(PDO $pdo, string $driver): void {
+    if ($driver === 'sqlite') {
+        $indexes = $pdo->query("PRAGMA index_list('communication_templates')")->fetchAll(PDO::FETCH_ASSOC);
+        $hasLegacyUnique = false;
+        foreach ($indexes as $idx) {
+            if ((int)($idx['unique'] ?? 0) !== 1) continue;
+            $name = (string)$idx['name'];
+            $cols = $pdo->query("PRAGMA index_info('" . str_replace("'", "''", $name) . "')")->fetchAll(PDO::FETCH_ASSOC);
+            $colNames = array_map(fn($c)=>(string)$c['name'], $cols);
+            if ($colNames === ['institution_id','template_type']) $hasLegacyUnique = true;
+        }
+        if ($hasLegacyUnique) {
+            $pdo->beginTransaction();
+            $pdo->exec("ALTER TABLE communication_templates RENAME TO communication_templates_old");
+            $pdo->exec("CREATE TABLE communication_templates (id INTEGER PRIMARY KEY AUTOINCREMENT, institution_id INT NOT NULL, template_type TEXT NOT NULL, estate TEXT NOT NULL DEFAULT 'General', subject TEXT NOT NULL, body TEXT NOT NULL, updated_at TEXT NOT NULL, is_approved TINYINT NOT NULL DEFAULT 0, approved_at TEXT NULL, UNIQUE(institution_id, template_type, estate), FOREIGN KEY(institution_id) REFERENCES institutions(id) ON DELETE CASCADE)");
+            $pdo->exec("INSERT INTO communication_templates(id,institution_id,template_type,estate,subject,body,updated_at,is_approved,approved_at) SELECT id,institution_id,template_type,COALESCE(estate,'General'),subject,body,updated_at,COALESCE(is_approved,0),approved_at FROM communication_templates_old");
+            $pdo->exec("DROP TABLE communication_templates_old");
+            $pdo->commit();
+        }
+        return;
+    }
+    safeExec($pdo, "ALTER TABLE communication_templates DROP INDEX communication_templates_institution_id_template_type_unique");
+    safeExec($pdo, "ALTER TABLE communication_templates ADD UNIQUE KEY uq_comm_tpl_inst_type_estate (institution_id, template_type, estate)");
 }
 
 function seedDefaultAdmin(PDO $pdo): void {
