@@ -1,0 +1,93 @@
+AuditConsultores · Estructura BD (MySQL)
+========================================
+
+Objetivo
+--------
+Esta estructura soporta el flujo real del sistema:
+1) Login administrador (/admin)
+2) Hub de instituciones (crear/editar/eliminar)
+3) Institución -> proyectos -> encuestas 360
+4) Encuestas por estamento con secciones/preguntas Likert 1-5
+5) Participantes no anónimos con token único
+6) Respuestas trazables por participante/correo
+7) Reportería y bitácora
+
+Tablas principales
+------------------
+1. admin_users
+   - Usuario administrador para acceso /admin.
+   - Aunque normalmente será uno, la tabla permite tener más en el futuro.
+
+2. institutions
+   - Catálogo de instituciones (hub principal).
+   - Campos base para ficha institucional: nombre, RBD, región, comuna, etc.
+
+3. institution_contacts
+   - Contactos de cada institución (director/a, contraparte, etc.).
+
+4. projects
+   - Diagnósticos/proyectos de una institución.
+
+5. surveys
+   - Encuestas dentro de un proyecto.
+
+6. survey_forms
+   - Versiones por estamento: Directivos, Docentes, Apoderados, Paradocentes.
+   - Estado: draft/published/closed.
+
+7. survey_sections
+   - Dimensiones/secciones de cada formulario.
+
+8. questions
+   - Preguntas de cada sección.
+   - Tipo principal: likert_1_5.
+
+9. participants
+   - Personas invitadas a responder.
+   - No anónimo: email y nombre obligatorios.
+
+10. invitation_tokens
+    - Token único de invitación por participante y formulario.
+    - Permite acceso sin login del encuestado.
+
+11. responses
+    - Cabecera de respuesta enviada.
+    - Guarda trazabilidad institucional/proyecto/formulario/participante.
+
+12. response_answers
+    - Respuestas por pregunta (valor 1..5).
+
+13. reports
+    - Metadatos de reportes generados (html/pdf/xlsx/etc.).
+
+14. activity_log
+    - Bitácora de acciones administrativas.
+
+Relaciones críticas
+-------------------
+- institutions 1---N projects
+- projects 1---N surveys
+- surveys 1---N survey_forms
+- survey_forms 1---N survey_sections
+- survey_sections 1---N questions
+- participants N---1 institutions
+- participants N---1 projects
+- invitation_tokens N---1 participants
+- invitation_tokens N---1 survey_forms
+- responses N---1 invitation_tokens
+- response_answers N---1 responses
+- response_answers N---1 questions
+
+Notas de implementación
+-----------------------
+- `participants` usa UNIQUE(project_id, email) para evitar duplicados por proyecto.
+- `response_answers` restringe Likert con CHECK 1..5.
+- `survey_forms` permite versionado por estamento (`version_label`).
+- `reports` y `activity_log` ya quedan listos para iteraciones futuras.
+
+Siguiente paso recomendado
+--------------------------
+1) Ejecutar `database/auditconsultores_schema.sql` en phpMyAdmin.
+2) Adaptar `lib/db.php` y consultas PHP a esta estructura final.
+3) Reemplazar gradualmente cualquier mock remanente.
+
