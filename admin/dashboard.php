@@ -130,6 +130,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $name = trim((string)($_POST['estate_name'] ?? ''));
       $_SESSION['qtpl_builder']['estates'] = array_values(array_filter($_SESSION['qtpl_builder']['estates'] ?? [], fn($e)=>$e!==$name));
       unset($_SESSION['qtpl_builder']['questions'][$name]);
+    } elseif ($action === 'qtpl_rename_estate') {
+      $old = trim((string)($_POST['old_estate_name'] ?? ''));
+      $new = trim((string)($_POST['new_estate_name'] ?? ''));
+      $current = $_SESSION['qtpl_builder']['estates'] ?? [];
+      if ($old === '' || $new === '') throw new RuntimeException('Debes indicar el estamento actual y el nuevo nombre');
+      if (!in_array($old, $current, true)) throw new RuntimeException('El estamento a renombrar no existe en la plantilla');
+      if (in_array($new, $current, true) && $new !== $old) throw new RuntimeException('Ya existe otro estamento con ese nombre');
+      foreach ($current as &$estateName) if ($estateName === $old) $estateName = $new;
+      unset($estateName);
+      $_SESSION['qtpl_builder']['estates'] = array_values($current);
+      if ($old !== $new) {
+        $_SESSION['qtpl_builder']['questions'][$new] = $_SESSION['qtpl_builder']['questions'][$old] ?? [];
+        unset($_SESSION['qtpl_builder']['questions'][$old]);
+      }
     } elseif ($action === 'qtpl_add_question') {
       $estate = (string)$_POST['estate']; $text = trim((string)$_POST['question_text']); $cat = trim((string)($_POST['question_category'] ?? ''));
       if ($text !== '' && in_array($estate, $_SESSION['qtpl_builder']['estates'] ?? [], true)) $_SESSION['qtpl_builder']['questions'][$estate][] = ['text'=>$text,'category'=>$cat];
@@ -561,6 +575,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
           <?php else: ?><form method='post' style='display:inline-block;margin:0 8px 8px 0' onsubmit='return confirm("¿Eliminar plantilla y todas sus preguntas asociadas? Esta acción no se puede deshacer.")'><input type='hidden' name='action' value='qtpl_delete_template'><input type='hidden' name='template_id' value='<?= (int)$tpl['id'] ?>'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='delete_template'><button class='btn danger'>Eliminar: <?= htmlspecialchars((string)$tpl['name']) ?></button></form><?php endif; ?>
         <?php endforeach; ?></div>
       <?php elseif($questionnaireMode==='create_template'): ?>
+        <?php $templateEstates = $qtplBuilder['estates'] ?? []; $activeTplEstate = $estateFilter; if (!in_array($activeTplEstate, $templateEstates, true)) $activeTplEstate = $templateEstates[0] ?? ''; $questions = $activeTplEstate !== '' ? ($qtplBuilder['questions'][$activeTplEstate] ?? []) : []; $tplCategories=[]; foreach(($qtplBuilder['questions'] ?? []) as $estateQs){ foreach(($estateQs ?? []) as $row){ $c=trim(qCategory($row)); if($c!=='' && !in_array($c,$tplCategories,true)) $tplCategories[]=$c; }} ?>
         <div style='display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap'>
           <a class='btn gray' style='text-decoration:none' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios'>← Volver</a>
           <form method='post'><input type='hidden' name='action' value='qtpl_reset'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><button class='btn gray'>Limpiar borrador</button></form>
@@ -570,25 +585,44 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
           <label>Nombre de la plantilla</label>
           <div style='display:flex;gap:8px'><input name='template_name' required value='<?= htmlspecialchars((string)($qtplBuilder['name'] ?? '')) ?>' placeholder='Ej: Encuesta Convivencia Escolar'><button class='btn'>Guardar plantilla</button></div>
         </form>
-        <div class='chips' style='margin:14px 0'><?php foreach($estates as $e): ?><a class='chip <?= $estateFilter===$e?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=create_template&estate=<?= urlencode($e) ?>'><?= $e ?></a><?php endforeach; ?></div>
-        <?php $questions = $qtplBuilder['questions'][$estateFilter] ?? []; ?>
-        <?php foreach($questions as $idx=>$q): ?>
-          <div style='border:1px solid #e6e9f0;border-radius:12px;padding:10px;margin-bottom:8px'>
+
+        <div style='margin-top:14px;border:1px solid #e6e9f0;border-radius:12px;padding:12px'>
+          <form method='post' style='display:grid;grid-template-columns:1fr auto;gap:8px'>
+            <input type='hidden' name='action' value='qtpl_add_estate'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'>
+            <input name='estate_name' required placeholder='Crear estamento (ej: Asistentes de aula)'><button class='btn'>Agregar estamento</button>
+          </form>
+          <?php if(count($templateEstates)===0): ?><div class='empty' style='margin-top:10px'>Esta plantilla parte vacía. Crea al menos un estamento para agregar preguntas.</div><?php endif; ?>
+        </div>
+
+        <?php if(count($templateEstates)>0): ?>
+          <div class='chips' style='margin:14px 0'><?php foreach($templateEstates as $e): ?><a class='chip <?= $activeTplEstate===$e?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios&qmode=create_template&estate=<?= urlencode($e) ?>'><?= htmlspecialchars($e) ?></a><?php endforeach; ?></div>
+          <div style='display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:10px'>
             <form method='post' style='display:grid;grid-template-columns:1fr auto;gap:8px'>
-              <input type='hidden' name='action' value='qtpl_update_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'>
-              <input name='question_text' value='<?= htmlspecialchars((string)$q) ?>'>
-              <button class='btn gray'>Modificar</button>
+              <input type='hidden' name='action' value='qtpl_rename_estate'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='old_estate_name' value='<?= htmlspecialchars($activeTplEstate) ?>'>
+              <input name='new_estate_name' required value='<?= htmlspecialchars($activeTplEstate) ?>'><button class='btn gray'>Renombrar estamento</button>
             </form>
-            <div style='display:flex;gap:6px;flex-wrap:wrap;margin-top:8px'>
-              <form method='post'><input type='hidden' name='action' value='qtpl_delete_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><button class='btn danger'>Eliminar</button></form>
-              <form method='post'><input type='hidden' name='action' value='qtpl_move_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input type='hidden' name='direction' value='up'><button class='btn gray' <?= $idx===0?'disabled':'' ?>>Subir</button></form>
-              <form method='post'><input type='hidden' name='action' value='qtpl_move_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input type='hidden' name='direction' value='down'><button class='btn gray' <?= $idx===count($questions)-1?'disabled':'' ?>>Bajar</button></form>
-            </div>
+            <form method='post' onsubmit='return confirm("¿Eliminar estamento y sus preguntas de esta plantilla?")'><input type='hidden' name='action' value='qtpl_delete_estate'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='estate_name' value='<?= htmlspecialchars($activeTplEstate) ?>'><button class='btn danger'>Eliminar estamento</button></form>
           </div>
-        <?php endforeach; ?>
-        <form method='post'><input type='hidden' name='action' value='qtpl_add_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($estateFilter) ?>'><label>Agregar pregunta</label><div style='display:flex;gap:8px'><input name='question_text' placeholder='Escribe la pregunta' required><button class='btn'>Guardar</button></div></form>
-        <?php if(count($questions)===0): ?><form method='post'><input type='hidden' name='action' value='qtpl_inherit_questions'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='to_estate' value='<?= htmlspecialchars($estateFilter) ?>'><select name='from_estate'><?php foreach($estates as $e): if($e!==$estateFilter): ?><option><?= $e ?></option><?php endif; endforeach; ?></select><button class='btn gray'>Heredar preguntas</button></form><?php endif; ?>
-      <?php elseif($questionnaireMode==='use_template'): ?>
+
+          <?php foreach($questions as $idx=>$q): ?>
+            <div style='border:1px solid #e6e9f0;border-radius:12px;padding:10px;margin-bottom:8px'>
+              <form method='post' style='display:grid;grid-template-columns:1fr 280px auto;gap:8px'>
+                <input type='hidden' name='action' value='qtpl_update_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeTplEstate) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'>
+                <input name='question_text' value='<?= htmlspecialchars(qText($q)) ?>'>
+                <input name='question_category' list='qtpl_categories' placeholder='Categoría (existente o nueva)' value='<?= htmlspecialchars(qCategory($q)) ?>'>
+                <button class='btn gray'>Modificar</button>
+              </form>
+              <div style='display:flex;gap:6px;flex-wrap:wrap;margin-top:8px'>
+                <form method='post'><input type='hidden' name='action' value='qtpl_delete_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeTplEstate) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><button class='btn danger'>Eliminar</button></form>
+                <form method='post'><input type='hidden' name='action' value='qtpl_move_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeTplEstate) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input type='hidden' name='direction' value='up'><button class='btn gray' <?= $idx===0?'disabled':'' ?>>Subir</button></form>
+                <form method='post'><input type='hidden' name='action' value='qtpl_move_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeTplEstate) ?>'><input type='hidden' name='idx' value='<?= (int)$idx ?>'><input type='hidden' name='direction' value='down'><button class='btn gray' <?= $idx===count($questions)-1?'disabled':'' ?>>Bajar</button></form>
+              </div>
+            </div>
+          <?php endforeach; ?>
+          <form method='post'><input type='hidden' name='action' value='qtpl_add_question'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='estate' value='<?= htmlspecialchars($activeTplEstate) ?>'><label>Agregar pregunta</label><div style='display:grid;grid-template-columns:1fr 280px auto;gap:8px'><input name='question_text' placeholder='Escribe la pregunta' required><input name='question_category' list='qtpl_categories' placeholder='Categoría (existente o nueva)'><button class='btn'>Guardar</button></div></form>
+          <datalist id='qtpl_categories'><?php foreach($tplCategories as $cat): ?><option value='<?= htmlspecialchars($cat) ?>'><?php endforeach; ?></datalist>
+        <?php endif; ?>
+<?php elseif($questionnaireMode==='use_template'): ?>
         <a class='btn gray' style='text-decoration:none' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=cuestionarios'>← Volver</a>
         <?php $allTemplates = $pdo->query('SELECT id, name FROM questionnaire_templates ORDER BY id DESC')->fetchAll(PDO::FETCH_ASSOC); ?>
         <div style='margin-top:10px'>
