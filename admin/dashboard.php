@@ -65,8 +65,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
       if (count($projectIds) > 0) {
         $inPr = implode(',', array_fill(0, count($projectIds), '?'));
+        $surveyIdsStmt = $pdo->prepare('SELECT id FROM surveys WHERE project_id IN (' . $inPr . ')');
+        $surveyIdsStmt->execute($projectIds);
+        $surveyIds = array_map('intval', $surveyIdsStmt->fetchAll(PDO::FETCH_COLUMN));
+        if (count($surveyIds) > 0) {
+          $inS = implode(',', array_fill(0, count($surveyIds), '?'));
+          $formIdsStmt = $pdo->prepare('SELECT id FROM forms WHERE survey_id IN (' . $inS . ')');
+          $formIdsStmt->execute($surveyIds);
+          $formIds = array_map('intval', $formIdsStmt->fetchAll(PDO::FETCH_COLUMN));
+          if (count($formIds) > 0) {
+            $inF = implode(',', array_fill(0, count($formIds), '?'));
+            $questionIdsStmt = $pdo->prepare('SELECT id FROM questions WHERE form_id IN (' . $inF . ')');
+            $questionIdsStmt->execute($formIds);
+            $questionIds = array_map('intval', $questionIdsStmt->fetchAll(PDO::FETCH_COLUMN));
+            if (count($questionIds) > 0) {
+              $inQ = implode(',', array_fill(0, count($questionIds), '?'));
+              $pdo->prepare('DELETE FROM response_answers WHERE question_id IN (' . $inQ . ')')->execute($questionIds);
+            }
+            $pdo->prepare('DELETE FROM invitation_tokens WHERE form_id IN (' . $inF . ')')->execute($formIds);
+            $pdo->prepare('DELETE FROM questions WHERE form_id IN (' . $inF . ')')->execute($formIds);
+            $pdo->prepare('DELETE FROM forms WHERE id IN (' . $inF . ')')->execute($formIds);
+          }
+          $pdo->prepare('DELETE FROM surveys WHERE id IN (' . $inS . ')')->execute($surveyIds);
+        }
         $pdo->prepare('DELETE FROM participants WHERE project_id IN (' . $inPr . ')')->execute($projectIds);
         $pdo->prepare('DELETE FROM questionnaires WHERE project_id IN (' . $inPr . ')')->execute($projectIds);
+        $pdo->prepare('DELETE FROM reports WHERE project_id IN (' . $inPr . ')')->execute($projectIds);
         $pdo->prepare('DELETE FROM projects WHERE id IN (' . $inPr . ')')->execute($projectIds);
       }
       $pdo->prepare('DELETE FROM communication_templates WHERE institution_id=?')->execute([$institutionId]);
