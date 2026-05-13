@@ -65,24 +65,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
       if (count($projectIds) > 0) {
         $inPr = implode(',', array_fill(0, count($projectIds), '?'));
-        $surveyIdsStmt = $pdo->prepare('SELECT id FROM surveys WHERE project_id IN (' . $inPr . ')');
+        if (tableExists($pdo, 'surveys')) { $surveyIdsStmt = $pdo->prepare('SELECT id FROM surveys WHERE project_id IN (' . $inPr . ')'); }
         $surveyIdsStmt->execute($projectIds);
         $surveyIds = array_map('intval', $surveyIdsStmt->fetchAll(PDO::FETCH_COLUMN));
         if (count($surveyIds) > 0) {
           $inS = implode(',', array_fill(0, count($surveyIds), '?'));
-          $formIdsStmt = $pdo->prepare('SELECT id FROM forms WHERE survey_id IN (' . $inS . ')');
+          if (tableExists($pdo, 'forms')) { $formIdsStmt = $pdo->prepare('SELECT id FROM forms WHERE survey_id IN (' . $inS . ')'); }
           $formIdsStmt->execute($surveyIds);
           $formIds = array_map('intval', $formIdsStmt->fetchAll(PDO::FETCH_COLUMN));
           if (count($formIds) > 0) {
             $inF = implode(',', array_fill(0, count($formIds), '?'));
-            $questionIdsStmt = $pdo->prepare('SELECT id FROM questions WHERE form_id IN (' . $inF . ')');
+            if (tableExists($pdo, 'questions')) { $questionIdsStmt = $pdo->prepare('SELECT id FROM questions WHERE form_id IN (' . $inF . ')'); }
             $questionIdsStmt->execute($formIds);
             $questionIds = array_map('intval', $questionIdsStmt->fetchAll(PDO::FETCH_COLUMN));
             if (count($questionIds) > 0) {
               $inQ = implode(',', array_fill(0, count($questionIds), '?'));
-              $pdo->prepare('DELETE FROM response_answers WHERE question_id IN (' . $inQ . ')')->execute($questionIds);
+              if (tableExists($pdo, 'response_answers')) { $pdo->prepare('DELETE FROM response_answers WHERE question_id IN (' . $inQ . ')')->execute($questionIds); }
             }
-            $pdo->prepare('DELETE FROM invitation_tokens WHERE form_id IN (' . $inF . ')')->execute($formIds);
+            if (tableExists($pdo, 'invitation_tokens')) { $pdo->prepare('DELETE FROM invitation_tokens WHERE form_id IN (' . $inF . ')')->execute($formIds); }
             $pdo->prepare('DELETE FROM questions WHERE form_id IN (' . $inF . ')')->execute($formIds);
             $pdo->prepare('DELETE FROM forms WHERE id IN (' . $inF . ')')->execute($formIds);
           }
@@ -90,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $pdo->prepare('DELETE FROM participants WHERE project_id IN (' . $inPr . ')')->execute($projectIds);
         $pdo->prepare('DELETE FROM questionnaires WHERE project_id IN (' . $inPr . ')')->execute($projectIds);
-        $pdo->prepare('DELETE FROM reports WHERE project_id IN (' . $inPr . ')')->execute($projectIds);
+        if (tableExists($pdo, 'reports')) $pdo->prepare('DELETE FROM reports WHERE project_id IN (' . $inPr . ')')->execute($projectIds);
         $pdo->prepare('DELETE FROM projects WHERE id IN (' . $inPr . ')')->execute($projectIds);
       }
       $pdo->prepare('DELETE FROM communication_templates WHERE institution_id=?')->execute([$institutionId]);
@@ -500,6 +500,23 @@ if ($questionnaireMode === 'use_template') {
 }
 
 
+
+
+function tableExists(PDO $pdo, string $table): bool {
+  try {
+    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+    if ($driver === 'sqlite') {
+      $st = $pdo->prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?");
+      $st->execute([$table]);
+      return (bool)$st->fetchColumn();
+    }
+    $st = $pdo->prepare("SHOW TABLES LIKE ?");
+    $st->execute([$table]);
+    return (bool)$st->fetchColumn();
+  } catch (Throwable $e) {
+    return false;
+  }
+}
 
 function hasInstitutionQuestionnaire(PDO $pdo, int $institutionId, int $projectId): bool {
   $st = $pdo->prepare('SELECT COUNT(*) FROM questionnaires q JOIN questionnaire_questions qq ON qq.questionnaire_id=q.id WHERE q.institution_id=? AND q.project_id=?');
