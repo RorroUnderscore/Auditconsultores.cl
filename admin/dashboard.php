@@ -206,7 +206,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
       if (count($templateEstates) < 1) throw new RuntimeException('La plantilla no contiene estamentos configurados');
       $pdo->beginTransaction();
-      $pdo->prepare('DELETE FROM participants WHERE institution_id=? AND project_id=?')->execute([$institutionId, $projectId]);
+      $pidsStmt = $pdo->prepare('SELECT id FROM participants WHERE institution_id=? AND project_id=?');
+      $pidsStmt->execute([$institutionId, $projectId]);
+      $pids = array_map('intval', $pidsStmt->fetchAll(PDO::FETCH_COLUMN));
+      if (count($pids) > 0) {
+        $in = implode(',', array_fill(0, count($pids), '?'));
+        $tokStmt = $pdo->prepare('SELECT id FROM invitation_tokens WHERE participant_id IN (' . $in . ')');
+        $tokStmt->execute($pids);
+        $tokenIds = array_map('intval', $tokStmt->fetchAll(PDO::FETCH_COLUMN));
+        if (count($tokenIds) > 0) {
+          $inTok = implode(',', array_fill(0, count($tokenIds), '?'));
+          $pdo->prepare('DELETE FROM questionnaire_response_answers WHERE response_id IN (SELECT id FROM responses WHERE token_id IN (' . $inTok . '))')->execute($tokenIds);
+          $pdo->prepare('DELETE FROM responses WHERE token_id IN (' . $inTok . ')')->execute($tokenIds);
+          $pdo->prepare('DELETE FROM invitation_tokens WHERE id IN (' . $inTok . ')')->execute($tokenIds);
+        }
+        $pdo->prepare('DELETE FROM participants WHERE id IN (' . $in . ')')->execute($pids);
+      }
       $pdo->prepare('DELETE FROM institution_estates WHERE institution_id=?')->execute([$institutionId]);
       $insEstate = $pdo->prepare('INSERT INTO institution_estates(institution_id, name, created_at) VALUES (?,?,?)');
       foreach ($templateEstates as $estateName) $insEstate->execute([$institutionId, $estateName, date('c')]);
@@ -386,7 +401,7 @@ if ($selectedInstitutionId > 0) {
 $existingQuestionnaire = null;
 if ($selectedInstitutionId > 0) {
   $projectId = resolveProjectId($pdo, $selectedInstitutionId);
-  $qst = $pdo->prepare('SELECT q.* FROM questionnaires q WHERE q.institution_id=? AND q.project_id=? ORDER BY q.id DESC LIMIT 1');
+  $qst = $pdo->prepare('SELECT q.*, (SELECT COUNT(*) FROM questionnaire_questions qq WHERE qq.questionnaire_id=q.id) AS q_count FROM questionnaires q WHERE q.institution_id=? AND q.project_id=? ORDER BY q_count DESC, q.id DESC LIMIT 1');
   $qst->execute([$selectedInstitutionId, $projectId]);
   $existingQuestionnaire = $qst->fetch(PDO::FETCH_ASSOC) ?: null;
   if ($existingQuestionnaire) {
