@@ -53,6 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $projectId = resolveProjectId($pdo, $institutionId);
       $email = trim((string)$_POST['email']);
       if (!filter_var($email, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Correo inválido');
+      if (!hasInstitutionQuestionnaire($pdo, $institutionId, $projectId)) throw new RuntimeException('Debes tener un cuestionario con preguntas antes de registrar participantes.');
       $pdo->prepare('INSERT INTO participants(institution_id, project_id, estate, name, last_name, email) VALUES (?,?,?,?,?,?)')->execute([
         $institutionId, $projectId, (string)$_POST['estate'], trim((string)$_POST['name']), trim((string)$_POST['last_name']), $email
       ]);
@@ -77,16 +78,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->prepare('DELETE FROM participants WHERE id=?')->execute([(int)$_POST['participant_id']]);
     } elseif ($action === 'send_email') {
       $participantId = (int)$_POST['participant_id'];
+      $ctxP = $pdo->prepare('SELECT institution_id, project_id FROM participants WHERE id=? LIMIT 1'); $ctxP->execute([$participantId]); $prCtx=$ctxP->fetch(PDO::FETCH_ASSOC); if(!$prCtx || !hasInstitutionQuestionnaire($pdo,(int)$prCtx['institution_id'],(int)$prCtx['project_id'])) throw new RuntimeException('No hay cuestionario activo con preguntas para enviar encuestas.');
       if (dispatchParticipantEmail($pdo, $participantId, 'formal')) {
         $pdo->prepare("UPDATE participants SET email_delivery_status='sent', email_sent_at=? WHERE id=?")->execute([date('c'), $participantId]);
       } else { throw new RuntimeException('No se pudo enviar correo'); }
     } elseif ($action === 'resend_email') {
       $participantId = (int)$_POST['participant_id'];
+      $ctxP = $pdo->prepare('SELECT institution_id, project_id FROM participants WHERE id=? LIMIT 1'); $ctxP->execute([$participantId]); $prCtx=$ctxP->fetch(PDO::FETCH_ASSOC); if(!$prCtx || !hasInstitutionQuestionnaire($pdo,(int)$prCtx['institution_id'],(int)$prCtx['project_id'])) throw new RuntimeException('No hay cuestionario activo con preguntas para enviar encuestas.');
       if (dispatchParticipantEmail($pdo, $participantId, 'formal')) {
         $pdo->prepare("UPDATE participants SET email_delivery_status='sent', email_sent_at=? WHERE id=?")->execute([date('c'), $participantId]);
       } else { throw new RuntimeException('No se pudo reenviar correo'); }
     } elseif ($action === 'send_reminder') {
       $participantId = (int)$_POST['participant_id'];
+      $ctxP = $pdo->prepare('SELECT institution_id, project_id FROM participants WHERE id=? LIMIT 1'); $ctxP->execute([$participantId]); $prCtx=$ctxP->fetch(PDO::FETCH_ASSOC); if(!$prCtx || !hasInstitutionQuestionnaire($pdo,(int)$prCtx['institution_id'],(int)$prCtx['project_id'])) throw new RuntimeException('No hay cuestionario activo con preguntas para enviar encuestas.');
       if (dispatchParticipantEmail($pdo, $participantId, 'recordatorio')) {
         $pdo->prepare("UPDATE participants SET email_delivery_status='reminded', reminder_sent_at=? WHERE id=?")->execute([date('c'), $participantId]);
       } else { throw new RuntimeException('No se pudo enviar recordatorio'); }
@@ -304,6 +308,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->commit(); $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'estates' => [], 'questions' => []];
     } elseif ($action === 'q_discard_all') {
       $institutionId = (int)$_POST['institution_id']; $projectId = resolveProjectId($pdo, $institutionId);
+      $pidsStmt=$pdo->prepare('SELECT id FROM participants WHERE institution_id=? AND project_id=?'); $pidsStmt->execute([$institutionId,$projectId]); $pids=array_map('intval',$pidsStmt->fetchAll(PDO::FETCH_COLUMN));
+      if(count($pids)>0){ $in=implode(',',array_fill(0,count($pids),'?')); $tokStmt=$pdo->prepare('SELECT id FROM invitation_tokens WHERE participant_id IN (' . $in . ')'); $tokStmt->execute($pids); $tokIds=array_map('intval',$tokStmt->fetchAll(PDO::FETCH_COLUMN)); if(count($tokIds)>0){ $inTok=implode(',',array_fill(0,count($tokIds),'?')); $pdo->prepare('DELETE FROM questionnaire_response_answers WHERE response_id IN (SELECT id FROM responses WHERE token_id IN (' . $inTok . '))')->execute($tokIds); $pdo->prepare('DELETE FROM responses WHERE token_id IN (' . $inTok . ')')->execute($tokIds); $pdo->prepare('DELETE FROM invitation_tokens WHERE id IN (' . $inTok . ')')->execute($tokIds);} }
       $pdo->prepare('DELETE FROM questionnaires WHERE institution_id=? AND project_id=?')->execute([$institutionId, $projectId]);
       $pdo->prepare('DELETE FROM participants WHERE institution_id=? AND project_id=?')->execute([$institutionId, $projectId]);
       $pdo->prepare('DELETE FROM communication_templates WHERE institution_id=?')->execute([$institutionId]);
@@ -438,6 +444,11 @@ if ($questionnaireMode === 'use_template') {
   if ($sum > 0) $questionnaireMode = 'institution_editor';
 }
 
+function hasInstitutionQuestionnaire(PDO $pdo, int $institutionId, int $projectId): bool {
+  $st = $pdo->prepare('SELECT COUNT(*) FROM questionnaires q JOIN questionnaire_questions qq ON qq.questionnaire_id=q.id WHERE q.institution_id=? AND q.project_id=?');
+  $st->execute([$institutionId, $projectId]);
+  return (int)$st->fetchColumn() > 0;
+}
 
 function dispatchParticipantEmail(PDO $pdo, int $participantId, string $templateType): bool {
   $stmt = $pdo->prepare('SELECT p.*, i.name AS institution_name FROM participants p JOIN institutions i ON i.id=p.institution_id WHERE p.id=? LIMIT 1');
