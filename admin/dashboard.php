@@ -391,7 +391,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   $redirect = '/admin/dashboard.php';
-  if (!empty($_POST['institution_id'])) {
+  if ($action === 'delete_institution') {
+    $redirect = '/admin/dashboard.php?tab=datos';
+  } elseif (!empty($_POST['institution_id'])) {
     $redirect .= '?institution_id=' . (int)$_POST['institution_id'] . '&tab=' . urlencode((string)($_POST['tab'] ?? 'datos'));
     if (!empty($_POST['tpl'])) $redirect .= '&tpl=' . urlencode((string)$_POST['tpl']);
     if (!empty($_POST['estate'])) $redirect .= '&estate=' . urlencode((string)$_POST['estate']);
