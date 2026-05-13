@@ -43,7 +43,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         trim((string)$_POST['address_line']), trim((string)$_POST['email']), trim((string)$_POST['phone']), trim((string)$_POST['dependency']), (string)($_POST['status'] ?? 'active'), (int)$_POST['institution_id']
       ]);
     } elseif ($action === 'delete_institution') {
-      $pdo->prepare('DELETE FROM institutions WHERE id=?')->execute([(int)$_POST['institution_id']]);
+      $institutionId = (int)$_POST['institution_id'];
+      $confirmText = trim((string)($_POST['confirm_delete_text'] ?? ''));
+      if ($confirmText !== 'ELIMINAR') throw new RuntimeException('Debes escribir ELIMINAR para confirmar el borrado total de la institución.');
+      $pdo->beginTransaction();
+      $projectIdsStmt = $pdo->prepare('SELECT id FROM projects WHERE institution_id=?'); $projectIdsStmt->execute([$institutionId]);
+      $projectIds = array_map('intval', $projectIdsStmt->fetchAll(PDO::FETCH_COLUMN));
+      $participantIdsStmt = $pdo->prepare('SELECT id FROM participants WHERE institution_id=?'); $participantIdsStmt->execute([$institutionId]);
+      $participantIds = array_map('intval', $participantIdsStmt->fetchAll(PDO::FETCH_COLUMN));
+      if (count($participantIds) > 0) {
+        $inP = implode(',', array_fill(0, count($participantIds), '?'));
+        $tokenStmt = $pdo->prepare('SELECT id FROM invitation_tokens WHERE participant_id IN (' . $inP . ')');
+        $tokenStmt->execute($participantIds);
+        $tokenIds = array_map('intval', $tokenStmt->fetchAll(PDO::FETCH_COLUMN));
+        if (count($tokenIds) > 0) {
+          $inT = implode(',', array_fill(0, count($tokenIds), '?'));
+          $pdo->prepare('DELETE FROM questionnaire_response_answers WHERE response_id IN (SELECT id FROM responses WHERE token_id IN (' . $inT . '))')->execute($tokenIds);
+          $pdo->prepare('DELETE FROM responses WHERE token_id IN (' . $inT . ')')->execute($tokenIds);
+          $pdo->prepare('DELETE FROM invitation_tokens WHERE id IN (' . $inT . ')')->execute($tokenIds);
+        }
+      }
+      if (count($projectIds) > 0) {
+        $inPr = implode(',', array_fill(0, count($projectIds), '?'));
+        $pdo->prepare('DELETE FROM participants WHERE project_id IN (' . $inPr . ')')->execute($projectIds);
+        $pdo->prepare('DELETE FROM questionnaires WHERE project_id IN (' . $inPr . ')')->execute($projectIds);
+        $pdo->prepare('DELETE FROM projects WHERE id IN (' . $inPr . ')')->execute($projectIds);
+      }
+      $pdo->prepare('DELETE FROM communication_templates WHERE institution_id=?')->execute([$institutionId]);
+      $pdo->prepare('DELETE FROM institution_estates WHERE institution_id=?')->execute([$institutionId]);
+      $pdo->prepare('DELETE FROM institution_contacts WHERE institution_id=?')->execute([$institutionId]);
+      $pdo->prepare('DELETE FROM question_categories WHERE institution_id=?')->execute([$institutionId]);
+      $pdo->prepare('DELETE FROM institutions WHERE id=?')->execute([$institutionId]);
+      $pdo->commit();
     } elseif ($action === 'create_contact') {
       $pdo->prepare('INSERT INTO institution_contacts(institution_id, full_name, role_title, email, phone, is_primary) VALUES (?,?,?,?,?,?)')->execute([
         (int)$_POST['institution_id'], trim((string)$_POST['full_name']), trim((string)$_POST['role_title']), trim((string)$_POST['email']), trim((string)$_POST['phone']), isset($_POST['is_primary']) ? 1 : 0
@@ -444,6 +475,8 @@ if ($questionnaireMode === 'use_template') {
   if ($sum > 0) $questionnaireMode = 'institution_editor';
 }
 
+
+
 function hasInstitutionQuestionnaire(PDO $pdo, int $institutionId, int $projectId): bool {
   $st = $pdo->prepare('SELECT COUNT(*) FROM questionnaires q JOIN questionnaire_questions qq ON qq.questionnaire_id=q.id WHERE q.institution_id=? AND q.project_id=?');
   $st->execute([$institutionId, $projectId]);
@@ -655,7 +688,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         <div class='row'><div><label>Mail</label><input name='email'></div><div><label>Teléfono</label><input name='phone'></div></div>
         <button class='btn'>Guardar</button>
       </form></div></section>
-    <section class='card'><h3>Instituciones</h3><div class='card-body'><?php foreach($institutions as $i): ?><div style='padding:10px;border:1px solid #e6e9f0;border-radius:12px;margin-bottom:8px'><strong><?= htmlspecialchars((string)$i['name']) ?></strong><br><small><?= htmlspecialchars((string)($i['commune']??'')) ?> · <?= htmlspecialchars((string)($i['region']??'')) ?></small><div style='margin-top:8px;display:flex;gap:8px'><a class='btn gray' style='text-decoration:none' href='?institution_id=<?= (int)$i['id'] ?>&tab=datos'>Abrir menú</a><form method='post' onsubmit='return confirm("¿Eliminar?")'><input type='hidden' name='action' value='delete_institution'><input type='hidden' name='institution_id' value='<?= (int)$i['id'] ?>'><button class='btn danger'>Eliminar</button></form></div></div><?php endforeach; ?></div></section>
+    <section class='card'><h3>Instituciones</h3><div class='card-body'><?php foreach($institutions as $i): ?><div style='padding:10px;border:1px solid #e6e9f0;border-radius:12px;margin-bottom:8px'><strong><?= htmlspecialchars((string)$i['name']) ?></strong><br><small><?= htmlspecialchars((string)($i['commune']??'')) ?> · <?= htmlspecialchars((string)($i['region']??'')) ?></small><div style='margin-top:8px;display:flex;gap:8px'><a class='btn gray' style='text-decoration:none' href='?institution_id=<?= (int)$i['id'] ?>&tab=datos'>Abrir menú</a><form method='post' onsubmit='const msg="¿Seguro que quieres eliminar esta institución? Se borrarán TODOS los registros asociados (cuestionarios, participantes, comunicaciones, respuestas y resultados). Escribe ELIMINAR para confirmar."; const v=prompt(msg,""); if(v===null)return false; this.confirm_delete_text.value=v.trim(); return this.confirm_delete_text.value==="ELIMINAR";'><input type='hidden' name='action' value='delete_institution'><input type='hidden' name='institution_id' value='<?= (int)$i['id'] ?>'><input type='hidden' name='confirm_delete_text' value=''><button class='btn danger'>Eliminar</button></form></div></div><?php endforeach; ?></div></section>
   </div>
 <?php else: ?>
   <?php if($tab==='datos'): ?>
