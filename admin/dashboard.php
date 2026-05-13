@@ -480,6 +480,17 @@ if ($selectedInstitutionId > 0) {
   }
 }
 
+$responsible = ['name'=>'','last_name'=>'','email'=>'','phone'=>''];
+if (!empty($contacts)) {
+  $primary = null; foreach ($contacts as $c) { if ((int)($c['is_primary'] ?? 0) === 1) { $primary = $c; break; } }
+  if (!$primary) $primary = $contacts[0];
+  $full = trim((string)($primary['full_name'] ?? '')); $parts = preg_split('/\s+/', $full, 2);
+  $responsible['name'] = $parts[0] ?? '';
+  $responsible['last_name'] = $parts[1] ?? '';
+  $responsible['email'] = (string)($primary['email'] ?? '');
+  $responsible['phone'] = (string)($primary['phone'] ?? '');
+}
+
 $existingQuestionnaire = null;
 if ($selectedInstitutionId > 0) {
   $projectId = resolveProjectId($pdo, $selectedInstitutionId);
@@ -1049,14 +1060,4 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
   <?php endif; ?>
 <?php endif; ?>
 </main></div><script>function insertToken(token){var el=document.getElementById('mail-body');if(!el)return;var start=el.selectionStart||0;var end=el.selectionEnd||0;var txt=el.value||'';el.value=txt.slice(0,start)+token+txt.slice(end);el.focus();el.selectionStart=el.selectionEnd=start+token.length;}</script></body></html>
-$responsible = ['name'=>'','last_name'=>'','email'=>'','phone'=>''];
-if (!empty($contacts)) {
-  $primary = null; foreach ($contacts as $c) { if ((int)($c['is_primary'] ?? 0) === 1) { $primary = $c; break; } }
-  if (!$primary) $primary = $contacts[0];
-  $full = trim((string)($primary['full_name'] ?? '')); $parts = preg_split('/\s+/', $full, 2);
-  $responsible['name'] = $parts[0] ?? '';
-  $responsible['last_name'] = $parts[1] ?? '';
-  $responsible['email'] = (string)($primary['email'] ?? '');
-  $responsible['phone'] = (string)($primary['phone'] ?? '');
-}
 
