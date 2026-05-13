@@ -20,6 +20,12 @@ $resultEstate = (string)($_GET['rest'] ?? 'Directivos');
 $estateManageMode = (string)($_GET['emode'] ?? '');
 $addMode = isset($_GET['add']) ? (int)$_GET['add'] === 1 : false;
 $selectedInstitutionId = isset($_GET['institution_id']) ? (int)$_GET['institution_id'] : 0;
+if (!isset($_SESSION['q_builder_context_institution_id'])) $_SESSION['q_builder_context_institution_id'] = 0;
+if ($selectedInstitutionId > 0 && (int)$_SESSION['q_builder_context_institution_id'] !== $selectedInstitutionId) {
+  $_SESSION['q_builder'] = ['name' => '', 'source_template_id' => null, 'status' => 'draft', 'enable_comments' => 0, 'estates' => [], 'questions' => []];
+  $_SESSION['q_builder_context_institution_id'] = $selectedInstitutionId;
+}
+
 $flashError = $_SESSION['flash_error'] ?? '';
 unset($_SESSION['flash_error']);
 
@@ -226,7 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $insEstate = $pdo->prepare('INSERT INTO institution_estates(institution_id, name, created_at) VALUES (?,?,?)');
       foreach ($templateEstates as $estateName) $insEstate->execute([$institutionId, $estateName, date('c')]);
       $pdo->commit();
-      $_SESSION['q_builder'] = ['name' => (string)$tpl['name'], 'source_template_id' => $templateId, 'status' => 'draft', 'enable_comments' => 0, 'estates' => $templateEstates, 'questions' => $qs];
+      $_SESSION['q_builder'] = ['name' => (string)$tpl['name'], 'source_template_id' => $templateId, 'status' => 'draft', 'enable_comments' => 0, 'estates' => $templateEstates, 'questions' => $qs]; $_SESSION['q_builder_context_institution_id'] = $institutionId;
     } elseif ($action === 'q_set_comments') {
       $_SESSION['q_builder']['enable_comments'] = isset($_POST['enable_comments']) ? 1 : 0;
     } elseif ($action === 'q_add_estate') {
@@ -289,7 +295,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $builder = $_SESSION['q_builder']; if (isset($_POST['enable_comments'])) $builder['enable_comments'] = (int)$_POST['enable_comments'] === 1 || $_POST['enable_comments'] === 'on' ? 1 : 0; $name = trim((string)($builder['name'] ?? 'Cuestionario '.date('Y-m-d H:i')));
       $builderEstates = $builder['estates'] ?? $estates;
       $total = 0; foreach ($builderEstates as $e) $total += count($builder['questions'][$e] ?? []); if ($total < 1) throw new RuntimeException('Debe incluir preguntas');
-      $institutionId = (int)$_POST['institution_id']; $projectId = resolveProjectId($pdo, $institutionId); $status = $action === 'q_publish' ? 'published' : 'draft';
+      $institutionId = (int)$_POST['institution_id']; $_SESSION['q_builder_context_institution_id'] = $institutionId; $projectId = resolveProjectId($pdo, $institutionId); $status = $action === 'q_publish' ? 'published' : 'draft';
       $pdo->beginTransaction();
       if ($status === 'published') $pdo->prepare("UPDATE questionnaires SET status='closed', updated_at=? WHERE institution_id=? AND project_id=? AND status='published'")->execute([date('c'), $institutionId, $projectId]);
       $pdo->prepare('INSERT INTO questionnaires(institution_id, project_id, name, source_template_id, status, enable_comments, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)')->execute([$institutionId, $projectId, $name, $builder['source_template_id'], $status, (int)($builder['enable_comments'] ?? 0), date('c'), date('c')]);
@@ -410,9 +416,10 @@ if ($selectedInstitutionId > 0) {
     $byEstate = []; $qEstates=[];
     foreach ($qq->fetchAll(PDO::FETCH_ASSOC) as $row) { $e=(string)$row['estate']; if(!isset($byEstate[$e])){ $byEstate[$e]=[]; $qEstates[]=$e; } $byEstate[$e][] = (string)$row['question_text']; }
     $hasAny = array_sum(array_map('count', $byEstate)) > 0;
-    if ($tab === 'cuestionarios' && ($questionnaireMode === '' || $questionnaireMode === 'institution_editor') && $hasAny) {
+    if ($tab === 'cuestionarios' && in_array($questionnaireMode, ['', 'institution_editor', 'scratch', 'use_template'], true) && $hasAny) {
       $questionnaireMode = 'institution_editor';
       $_SESSION['q_builder'] = ['name' => (string)$existingQuestionnaire['name'], 'source_template_id' => $existingQuestionnaire['source_template_id'] ?? null, 'status' => (string)$existingQuestionnaire['status'], 'enable_comments' => (int)($existingQuestionnaire['enable_comments'] ?? 0), 'estates' => $qEstates, 'questions' => $byEstate];
+      $_SESSION['q_builder_context_institution_id'] = $selectedInstitutionId;
       $qBuilder = $_SESSION['q_builder'];
     }
   }
