@@ -38,10 +38,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         trim((string)$_POST['address_line']), trim((string)$_POST['email']), trim((string)$_POST['phone']), trim((string)$_POST['dependency']), (string)($_POST['status'] ?? 'active')
       ]);
     } elseif ($action === 'update_institution') {
+      $institutionId = (int)$_POST['institution_id'];
       $pdo->prepare('UPDATE institutions SET name=?, code=?, rbd=?, region=?, commune=?, address_line=?, email=?, phone=?, dependency=?, status=? WHERE id=?')->execute([
         trim((string)$_POST['name']), trim((string)$_POST['code']), trim((string)$_POST['rbd']), trim((string)$_POST['region']), trim((string)$_POST['commune']),
-        trim((string)$_POST['address_line']), trim((string)$_POST['email']), trim((string)$_POST['phone']), trim((string)$_POST['dependency']), (string)($_POST['status'] ?? 'active'), (int)$_POST['institution_id']
+        trim((string)$_POST['address_line']), trim((string)$_POST['email']), trim((string)$_POST['phone']), trim((string)$_POST['dependency']), (string)($_POST['status'] ?? 'active'), $institutionId
       ]);
+      $rName = trim((string)($_POST['responsible_name'] ?? ''));
+      $rLast = trim((string)($_POST['responsible_last_name'] ?? ''));
+      $rEmail = trim((string)($_POST['responsible_email'] ?? ''));
+      $rPhone = trim((string)($_POST['responsible_phone'] ?? ''));
+      $rFull = trim($rName . ' ' . $rLast);
+      $sel = $pdo->prepare('SELECT id FROM institution_contacts WHERE institution_id=? AND is_primary=1 ORDER BY id ASC LIMIT 1');
+      $sel->execute([$institutionId]);
+      $contactId = $sel->fetchColumn();
+      if ($rFull !== '' || $rEmail !== '' || $rPhone !== '') {
+        if ($contactId) $pdo->prepare('UPDATE institution_contacts SET full_name=?, email=?, phone=?, role_title=?, is_primary=1 WHERE id=?')->execute([$rFull !== '' ? $rFull : 'Responsable', $rEmail, $rPhone, 'Responsable del Estudio', (int)$contactId]);
+        else $pdo->prepare('INSERT INTO institution_contacts(institution_id, full_name, role_title, email, phone, is_primary) VALUES (?,?,?,?,?,1)')->execute([$institutionId, $rFull !== '' ? $rFull : 'Responsable', 'Responsable del Estudio', $rEmail, $rPhone]);
+      }
     } elseif ($action === 'delete_institution') {
       $institutionId = (int)$_POST['institution_id'];
       $confirmText = trim((string)($_POST['confirm_delete_text'] ?? ''));
@@ -735,7 +748,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
   </div>
 <?php else: ?>
   <?php if($tab==='datos'): ?>
-    <section class='card' style='margin-top:16px'><h3>Datos de la Institución</h3><div class='card-body'><form method='post'><input type='hidden' name='action' value='update_institution'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='datos'><div class='row'><div><label>Nombre</label><input name='name' value='<?= htmlspecialchars((string)$selectedInstitution['name']) ?>'></div><div><label>Calle</label><input name='address_line' value='<?= htmlspecialchars((string)($selectedInstitution['address_line']??'')) ?>'></div></div><div class='row'><div><label>Comuna</label><input name='commune' value='<?= htmlspecialchars((string)($selectedInstitution['commune']??'')) ?>'></div><div><label>Región</label><input name='region' value='<?= htmlspecialchars((string)($selectedInstitution['region']??'')) ?>'></div></div><div class='row'><div><label>Email</label><input name='email' value='<?= htmlspecialchars((string)($selectedInstitution['email']??'')) ?>'></div><div><label>Teléfono</label><input name='phone' value='<?= htmlspecialchars((string)($selectedInstitution['phone']??'')) ?>'></div></div><button class='btn'>Guardar</button></form></div></section>
+    <section class='card' style='margin-top:16px'><h3>Datos de la Institución</h3><div class='card-body'><form method='post'><input type='hidden' name='action' value='update_institution'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitution['id'] ?>'><input type='hidden' name='tab' value='datos'><div class='row'><div><label>Nombre</label><input name='name' value='<?= htmlspecialchars((string)$selectedInstitution['name']) ?>'></div><div><label>Calle</label><input name='address_line' value='<?= htmlspecialchars((string)($selectedInstitution['address_line']??'')) ?>'></div></div><div class='row'><div><label>Comuna</label><input name='commune' value='<?= htmlspecialchars((string)($selectedInstitution['commune']??'')) ?>'></div><div><label>Región</label><input name='region' value='<?= htmlspecialchars((string)($selectedInstitution['region']??'')) ?>'></div></div><div class='row'><div><label>Email Institución</label><input name='email' value='<?= htmlspecialchars((string)($selectedInstitution['email']??'')) ?>'></div><div><label>Teléfono Institución</label><input name='phone' value='<?= htmlspecialchars((string)($selectedInstitution['phone']??'')) ?>'></div></div><h3 style='margin-top:14px'>Responsable del Estudio</h3><div class='row'><div><label>Nombre</label><input name='responsible_name' value='<?= htmlspecialchars((string)($responsible['name'] ?? '')) ?>'></div><div><label>Apellidos</label><input name='responsible_last_name' value='<?= htmlspecialchars((string)($responsible['last_name'] ?? '')) ?>'></div></div><div class='row'><div><label>Mail</label><input name='responsible_email' value='<?= htmlspecialchars((string)($responsible['email'] ?? '')) ?>'></div><div><label>Teléfono</label><input name='responsible_phone' value='<?= htmlspecialchars((string)($responsible['phone'] ?? '')) ?>'></div></div><button class='btn'>Guardar</button></form></div></section>
   <?php elseif($tab==='cuestionarios'): ?>
     <section class='card' style='margin-top:16px'><h3>Cuestionarios</h3><div class='card-body'>
       <?php if($questionnaireMode===''): ?>
@@ -1036,3 +1049,14 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
   <?php endif; ?>
 <?php endif; ?>
 </main></div><script>function insertToken(token){var el=document.getElementById('mail-body');if(!el)return;var start=el.selectionStart||0;var end=el.selectionEnd||0;var txt=el.value||'';el.value=txt.slice(0,start)+token+txt.slice(end);el.focus();el.selectionStart=el.selectionEnd=start+token.length;}</script></body></html>
+$responsible = ['name'=>'','last_name'=>'','email'=>'','phone'=>''];
+if (!empty($contacts)) {
+  $primary = null; foreach ($contacts as $c) { if ((int)($c['is_primary'] ?? 0) === 1) { $primary = $c; break; } }
+  if (!$primary) $primary = $contacts[0];
+  $full = trim((string)($primary['full_name'] ?? '')); $parts = preg_split('/\s+/', $full, 2);
+  $responsible['name'] = $parts[0] ?? '';
+  $responsible['last_name'] = $parts[1] ?? '';
+  $responsible['email'] = (string)($primary['email'] ?? '');
+  $responsible['phone'] = (string)($primary['phone'] ?? '');
+}
+
