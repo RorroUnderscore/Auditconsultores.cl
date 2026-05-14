@@ -505,7 +505,7 @@ if ($selectedInstitutionId > 0) {
     $byEstate = []; $qEstates=[];
     foreach ($qq->fetchAll(PDO::FETCH_ASSOC) as $row) { $e=(string)$row['estate']; if(!isset($byEstate[$e])){ $byEstate[$e]=[]; $qEstates[]=$e; } $byEstate[$e][] = (string)$row['question_text']; }
     $hasAny = array_sum(array_map('count', $byEstate)) > 0;
-    if ($tab === 'cuestionarios' && in_array($questionnaireMode, ['', 'institution_editor', 'scratch', 'use_template'], true) && $hasAny) {
+    if ($tab === 'cuestionarios' && in_array($questionnaireMode, ['', 'institution_editor'], true) && $hasAny) {
       $questionnaireMode = 'institution_editor';
       $_SESSION['q_builder'] = ['name' => (string)$existingQuestionnaire['name'], 'source_template_id' => $existingQuestionnaire['source_template_id'] ?? null, 'status' => (string)$existingQuestionnaire['status'], 'enable_comments' => (int)($existingQuestionnaire['enable_comments'] ?? 0), 'estates' => $qEstates, 'questions' => $byEstate];
       $_SESSION['q_builder_context_institution_id'] = $selectedInstitutionId;
@@ -800,7 +800,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         <form method='post' style='margin-top:10px'>
           <input type='hidden' name='action' value='qtpl_save'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='tpl_estate' value='<?= htmlspecialchars($activeTplEstate) ?>' >
           <label>Nombre de la plantilla</label>
-          <div style='display:flex;gap:8px'><input name='template_name' required value='<?= htmlspecialchars((string)($qtplBuilder['name'] ?? '')) ?>' placeholder='Ej: Encuesta Convivencia Escolar' onblur="var f=document.getElementById('qtpl_name_sync_form');var i=document.getElementById('qtpl_name_sync'); if(f&&i){i.value=this.value; f.submit();}"><button class='btn'>Guardar plantilla</button></div><form id='qtpl_name_sync_form' method='post' style='display:none'><input type='hidden' name='action' value='qtpl_set_name'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><input type='hidden' name='tab' value='cuestionarios'><input type='hidden' name='qmode' value='create_template'><input type='hidden' name='tpl_estate' value='<?= htmlspecialchars($activeTplEstate) ?>'><input type='hidden' id='qtpl_name_sync' name='template_name' value=''></form>
+          <div style='display:flex;gap:8px'><input name='template_name' required value='<?= htmlspecialchars((string)($qtplBuilder['name'] ?? '')) ?>' placeholder='Ej: Encuesta Convivencia Escolar'><button class='btn'>Guardar plantilla</button></div>
         </form>
 
         <div style='margin-top:14px;border:1px solid #e6e9f0;border-radius:12px;padding:12px'>
