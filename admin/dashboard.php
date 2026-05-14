@@ -1178,7 +1178,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         }
       }
     ?>
-    <div style='margin-top:16px;display:flex;gap:10px'><button class='btn' type='button'>⭳ Exportar PDF</button></div>
+    <div style='margin-top:16px;display:flex;gap:10px'><a class='btn' style='text-decoration:none' target='_blank' href='/admin/deliverable_report.php?institution_id=<?= (int)$selectedInstitutionId ?>'>⭳ Exportar PDF</a></div>
     <section class='card' style='margin-top:14px'><h3>Vista Previa del Reporte</h3><div class='card-body'>
       <?php if(empty($deliverableRows)): ?>
         <div class='empty'>Aún no hay respuestas para generar la vista previa del reporte.</div>
