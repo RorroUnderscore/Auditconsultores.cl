@@ -15,8 +15,8 @@ $templateEstateFilter = trim((string)($_GET['tpl_estate'] ?? ''));
 $questionnaireEstateFilter = trim((string)($_GET['q_estate'] ?? ''));
 $questionnaireMode = (string)($_GET['qmode'] ?? '');
 $questionnaireNew = (string)($_GET['qnew'] ?? '') === '1';
-$resultView = (string)($_GET['rview'] ?? 'charts');
-$resultEstate = (string)($_GET['rest'] ?? 'Directivos');
+$resultView = (string)($_GET['rview'] ?? 'charts_dim');
+$resultEstate = trim((string)($_GET['rest'] ?? ''));
 $estateManageMode = (string)($_GET['emode'] ?? '');
 $addMode = isset($_GET['add']) ? (int)$_GET['add'] === 1 : false;
 $selectedInstitutionId = isset($_GET['institution_id']) ? (int)$_GET['institution_id'] : 0;
@@ -667,12 +667,6 @@ function exportResultsExcel(PDO $pdo, int $institutionId): void {
   $qSel->execute([$institutionId, $projectId]); $activeQ = $qSel->fetch(PDO::FETCH_ASSOC);
   $qid = (int)($activeQ['id'] ?? 0);
   $estates = getInstitutionEstates($pdo, $institutionId);
-  $estateStmt = $pdo->prepare("SELECT DISTINCT TRIM(estate) estate FROM questionnaire_questions WHERE questionnaire_id=? AND TRIM(estate)<>'' ORDER BY estate");
-  $estateStmt->execute([$qid]);
-  $questionEstates = array_map(fn($r)=>(string)$r['estate'], $estateStmt->fetchAll(PDO::FETCH_ASSOC));
-  $participantEstates = array_values(array_unique(array_map(fn($p)=>(string)($p['estate'] ?? ''), $participants)));
-  $estates = array_values(array_filter(array_unique(array_merge($estates, $questionEstates, $participantEstates)), fn($e)=>trim((string)$e)!==''));
-  if (empty($estates)) $estates = ['General'];
   $xml = '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
   $xml .= '<Styles><Style ss:ID="h"><Font ss:Bold="1"/><Interior ss:Color="#E8EEFF" ss:Pattern="Solid"/></Style><Style ss:ID="th"><Font ss:Bold="1"/><Interior ss:Color="#F3F4F6" ss:Pattern="Solid"/></Style></Styles>';
   $xml .= '<Worksheet ss:Name="Resumen"><Table>';
@@ -683,7 +677,7 @@ function exportResultsExcel(PDO $pdo, int $institutionId): void {
     if ($qid === 0) { $xml .= '<Row>'.xmlCell('Sin cuestionario activo').'</Row></Table></Worksheet>'; continue; }
     $questions = $pdo->prepare("SELECT qq.id, qq.question_text, qc.name category_name FROM questionnaire_questions qq LEFT JOIN question_categories qc ON qc.id=qq.category_id WHERE qq.questionnaire_id=? AND qq.estate=? ORDER BY qq.q_order, qq.id");
     $questions->execute([$qid, $estate]); $qRows = $questions->fetchAll(PDO::FETCH_ASSOC);
-    foreach($qRows as $idx=>$q){ $xml .= '<Row><Cell ss:StyleID="h"><Data ss:Type="String">Pregunta '.($idx+1).'</Data></Cell>'.xmlCell((string)$q['question_text']).xmlCell('Dimensión: '.(string)($q['category_name'] ?? 'Sin dimensión')).'</Row><Row><Cell ss:StyleID="th"><Data ss:Type="String">Participante</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Correo</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Respuesta</Data></Cell></Row>';
+    foreach($qRows as $idx=>$q){ $xml .= '<Row><Cell ss:StyleID="h"><Data ss:Type="String">Pregunta '.($idx+1).'</Data></Cell>'.xmlCell((string)$q['question_text']).xmlCell('Categoría: '.(string)($q['category_name'] ?? 'Sin categoría')).'</Row><Row><Cell ss:StyleID="th"><Data ss:Type="String">Participante</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Correo</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Respuesta</Data></Cell></Row>';
       $ans = $pdo->prepare("SELECT p.name,p.last_name,p.email,qra.value FROM questionnaire_response_answers qra JOIN responses r ON r.id=qra.response_id JOIN invitation_tokens t ON t.id=r.token_id JOIN participants p ON p.id=t.participant_id WHERE r.questionnaire_id=? AND qra.questionnaire_question_id=? ORDER BY p.last_name,p.name");
       $ans->execute([$qid,(int)$q['id']]); $counts=[1=>0,2=>0,3=>0,4=>0,5=>0];
       foreach($ans->fetchAll(PDO::FETCH_ASSOC) as $a){ $v=(int)$a['value']; if(isset($counts[$v]))$counts[$v]++; $xml.='<Row>'.xmlCell(trim(($a['name']??'').' '.($a['last_name']??''))).xmlCell((string)$a['email']).xmlCell((string)$v).'</Row>'; }
@@ -693,38 +687,6 @@ function exportResultsExcel(PDO $pdo, int $institutionId): void {
     $comments->execute([$qid,$estate]); $cRows=$comments->fetchAll(PDO::FETCH_COLUMN);
     if ($cRows){ $xml .= '<Row><Cell ss:StyleID="h"><Data ss:Type="String">Comentarios</Data></Cell></Row>'; foreach($cRows as $c){ $xml .= '<Row>'.xmlCell((string)$c).'</Row>'; } }
     $xml .= '</Table></Worksheet>'; }
-  $xml .= '<Worksheet ss:Name="Dimensiones"><Table>';
-  $xml .= '<Row><Cell ss:StyleID="th"><Data ss:Type="String">Dimensión</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Estamento</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Promedio (1-5)</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Puntaje % (0-100)</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Respuestas</Data></Cell></Row>';
-  if ($qid > 0) {
-    $dimStmt = $pdo->prepare("SELECT COALESCE(NULLIF(TRIM(qc.name),''),'Sin dimensión') dimension_name, qq.estate, qra.value, COUNT(*) qty
-      FROM questionnaire_response_answers qra
-      JOIN responses r ON r.id=qra.response_id
-      JOIN questionnaire_questions qq ON qq.id=qra.questionnaire_question_id
-      LEFT JOIN question_categories qc ON qc.id=qq.category_id
-      WHERE r.questionnaire_id=?
-      GROUP BY COALESCE(NULLIF(TRIM(qc.name),''),'Sin dimensión'), qq.estate, qra.value
-      ORDER BY dimension_name, qq.estate, qra.value");
-    $dimStmt->execute([$qid]);
-    $dimAgg = [];
-    foreach($dimStmt->fetchAll(PDO::FETCH_ASSOC) as $row){
-      $d=(string)$row['dimension_name']; $e=(string)$row['estate']; $v=(int)$row['value']; $qty=(int)$row['qty'];
-      if(!isset($dimAgg[$d])) $dimAgg[$d]=[];
-      if(!isset($dimAgg[$d][$e])) $dimAgg[$d][$e]=['sum'=>0,'total'=>0];
-      $dimAgg[$d][$e]['sum'] += ($v*$qty);
-      $dimAgg[$d][$e]['total'] += $qty;
-    }
-    if (!$dimAgg) { $xml .= '<Row>'.xmlCell('Sin datos disponibles').'</Row>'; }
-    else {
-      foreach($dimAgg as $dim=>$estateRows){
-        foreach($estateRows as $estate=>$vals){
-          $avg = $vals['total']>0 ? round($vals['sum']/$vals['total'],2) : 0;
-          $pct = $vals['total']>0 ? round(($avg/5)*100,1) : 0;
-          $xml .= '<Row>'.xmlCell($dim).xmlCell($estate).xmlCell((string)$avg).xmlCell((string)$pct).xmlCell((string)$vals['total']).'</Row>';
-        }
-      }
-    }
-  } else { $xml .= '<Row>'.xmlCell('Sin cuestionario activo').'</Row>'; }
-  $xml .= '</Table></Worksheet>';
   $xml .= '<Worksheet ss:Name="Participantes"><Table><Row><Cell ss:StyleID="th"><Data ss:Type="String">Estamento</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Nombre</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Apellido</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Mail</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Estado cuestionario</Data></Cell></Row>';
   foreach($participants as $p){ $status=(!empty($p['responded_at']) || (int)$p['has_used_token']===1)?'Contestado':'No contestado'; $xml.='<Row>'.xmlCell((string)$p['estate']).xmlCell((string)$p['name']).xmlCell((string)($p['last_name']??'')).xmlCell((string)$p['email']).xmlCell($status).'</Row>'; }
   $xml .= '</Table></Worksheet></Workbook>';
@@ -1071,9 +1033,28 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
     </div></section>
   <?php elseif($tab==='resultados'): ?>
     <?php
-      $resultEstate = in_array($resultEstate, $estates, true) ? $resultEstate : 'Directivos';
+      if (empty($estates)) $estates = ['General'];
+      $resultEstate = in_array($resultEstate, $estates, true) ? $resultEstate : (string)($estates[0] ?? 'General');
       $responsesByQuestion = [];
+      $responsesByDimension = [];
       if ($selectedInstitutionId > 0) {
+        $sqlDim = "SELECT COALESCE(NULLIF(TRIM(qc.name),''),'Sin dimensión') dimension_name, qq.estate, qra.value, COUNT(*) qty
+                   FROM questionnaire_response_answers qra
+                   JOIN responses r ON r.id=qra.response_id
+                   JOIN questionnaire_questions qq ON qq.id=qra.questionnaire_question_id
+                   JOIN questionnaires q ON q.id=qq.questionnaire_id
+                   LEFT JOIN question_categories qc ON qc.id=qq.category_id
+                   WHERE q.institution_id=?
+                   GROUP BY COALESCE(NULLIF(TRIM(qc.name),''),'Sin dimensión'), qq.estate, qra.value
+                   ORDER BY dimension_name ASC";
+        $sd = $pdo->prepare($sqlDim); $sd->execute([(int)$selectedInstitutionId]);
+        foreach($sd->fetchAll(PDO::FETCH_ASSOC) as $row){
+          $d=(string)$row['dimension_name']; $e=(string)$row['estate']; $v=(int)$row['value']; $qty=(int)$row['qty'];
+          if(!isset($responsesByDimension[$d])) $responsesByDimension[$d]=['estates'=>[]];
+          if(!isset($responsesByDimension[$d]['estates'][$e])) $responsesByDimension[$d]['estates'][$e]=['sum'=>0,'total'=>0];
+          $responsesByDimension[$d]['estates'][$e]['sum'] += ($v * $qty);
+          $responsesByDimension[$d]['estates'][$e]['total'] += $qty;
+        }
         $sql = "SELECT qq.id question_id, qq.question_text, qc.name category_name, qra.value, COUNT(*) qty
                 FROM questionnaire_response_answers qra
                 JOIN responses r ON r.id=qra.response_id
@@ -1082,7 +1063,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
                 LEFT JOIN question_categories qc ON qc.id=qq.category_id
                 WHERE q.institution_id=? AND qq.estate=?
                 GROUP BY qq.id, qq.question_text, qc.name, qra.value
-                ORDER BY qq.id ASC, qra.value ASC";
+                ORDER BY qq.q_order ASC, qq.id ASC, qra.value ASC";
         $st = $pdo->prepare($sql); $st->execute([(int)$selectedInstitutionId, $resultEstate]);
         foreach($st->fetchAll(PDO::FETCH_ASSOC) as $row){
           $qid=(int)$row['question_id']; if(!isset($responsesByQuestion[$qid])) $responsesByQuestion[$qid]=['text'=>(string)$row['question_text'],'category'=>(string)($row['category_name'] ?? ''),'counts'=>[1=>0,2=>0,3=>0,4=>0,5=>0],'total'=>0];
@@ -1092,24 +1073,38 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
     ?>
     <section class='card' style='margin-top:16px'><h3>Resultados</h3><div class='card-body'>
       <div class='chips'>
-        <a class='chip <?= $resultView==='charts'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=resultados&rview=charts&rest=<?= urlencode($resultEstate) ?>'>Gráficas</a>
+        <a class='chip <?= $resultView==='charts_dim'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=resultados&rview=charts_dim&rest=<?= urlencode($resultEstate) ?>'>Gráficas</a>
+        <a class='chip <?= $resultView==='charts'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=resultados&rview=charts&rest=<?= urlencode($resultEstate) ?>'>Gráficas por pregunta</a>
         <a class='chip <?= $resultView==='db'?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=resultados&rview=db&rest=<?= urlencode($resultEstate) ?>'>Base de datos</a>
       </div>
       <?php if($resultView==='db'): ?>
         <div style='margin-top:16px'><form method='post'><input type='hidden' name='action' value='export_results_excel'><input type='hidden' name='institution_id' value='<?= (int)$selectedInstitutionId ?>'><button class='btn gray' type='submit'>Exportar Excel</button></form></div>
+      <?php elseif($resultView==='charts_dim'): ?>
+        <?php if(empty($responsesByDimension)): ?><div class='empty'>Aún no hay respuestas para mostrar en dimensiones.</div>
+        <?php else: ?>
+          <?php foreach($responsesByDimension as $dimName=>$dimData): ?>
+            <div class='chart' style='margin-top:14px'>
+              <h4 style='margin:0 0 8px'>Dimensión: <?= htmlspecialchars($dimName) ?></h4>
+              <?php foreach($estates as $e): $d=$dimData['estates'][$e] ?? ['sum'=>0,'total'=>0]; $avg=$d['total']>0?($d['sum']/$d['total']):0; $pct=(int)round(($avg/5)*100); ?>
+                <div class='chart-row'><div><?= htmlspecialchars($e) ?></div><div class='bar'><span style='width:<?= $pct ?>%;background:<?= estateColorByIndex(array_search($e,$estates,true) ?: 0) ?>'></span></div><div style='text-align:right'><?= $pct ?>%</div></div>
+              <?php endforeach; ?>
+            </div>
+          <?php endforeach; ?>
+        <?php endif; ?>
       <?php else: ?>
         <div class='chips' style='margin:14px 0'><?php foreach($estates as $e): ?><a class='chip <?= $resultEstate===$e?'active':'' ?>' href='?institution_id=<?= (int)$selectedInstitutionId ?>&tab=resultados&rview=charts&rest=<?= urlencode($e) ?>'><?= $e ?></a><?php endforeach; ?></div>
         <?php if(empty($responsesByQuestion)): ?><div class='empty'>Aún no hay respuestas para <?= htmlspecialchars($resultEstate) ?>.</div>
         <?php else: ?>
-          <?php foreach($responsesByQuestion as $i=>$q): ?>
+          <?php $questionNumber=1; foreach($responsesByQuestion as $q): ?>
             <div class='chart' style='margin-bottom:12px'>
-              <strong>Pregunta <?= (int)$i ?>:</strong> <?= htmlspecialchars($q['text']) ?> <?php if(!empty($q['category'])): ?><span class='chip' style='margin-left:8px'>Categoría: <?= htmlspecialchars($q['category']) ?></span><?php endif; ?>
+              <strong>Pregunta <?= $questionNumber ?>:</strong> <?= htmlspecialchars($q['text']) ?> <?php if(!empty($q['category'])): ?><span class='chip' style='margin-left:8px'>Dimensión: <?= htmlspecialchars($q['category']) ?></span><?php endif; ?>
               <div style='margin-top:10px'>
                 <?php for($v=1;$v<=5;$v++): $pct=$q['total']>0?round(($q['counts'][$v]/$q['total'])*100):0; ?>
                   <div class='chart-row'><div><?= $v ?></div><div class='bar'><span style='width:<?= (int)$pct ?>%;background:#4f46e5'></span></div><div style='text-align:right'><?= (int)$pct ?>%</div></div>
                 <?php endfor; ?>
               </div>
             </div>
+            <?php $questionNumber++; ?>
           <?php endforeach; ?>
         <?php endif; ?>
       <?php endif; ?>
