@@ -1131,4 +1131,3 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
 })();
 </script>
 <script>function insertToken(token){var el=document.getElementById('mail-body');if(!el)return;var start=el.selectionStart||0;var end=el.selectionEnd||0;var txt=el.value||'';el.value=txt.slice(0,start)+token+txt.slice(end);el.focus();el.selectionStart=el.selectionEnd=start+token.length;}</script></body></html>
-
