@@ -523,7 +523,9 @@ if ($selectedInstitutionId > 0) {
     $byEstate = []; $qEstates=[];
     foreach ($qq->fetchAll(PDO::FETCH_ASSOC) as $row) { $e=(string)$row['estate']; if(!isset($byEstate[$e])){ $byEstate[$e]=[]; $qEstates[]=$e; } $byEstate[$e][] = ['text'=>(string)$row['question_text'],'category'=>(string)($row['category_name'] ?? '')]; }
     $hasAny = array_sum(array_map('count', $byEstate)) > 0;
-    if ($tab === 'cuestionarios' && in_array($questionnaireMode, ['', 'institution_editor'], true) && $hasAny) {
+    $sessionQuestionCount = 0;
+    foreach (($_SESSION['q_builder']['estates'] ?? []) as $se) $sessionQuestionCount += count($_SESSION['q_builder']['questions'][$se] ?? []);
+    if ($tab === 'cuestionarios' && in_array($questionnaireMode, ['', 'institution_editor'], true) && $hasAny && $sessionQuestionCount === 0) {
       $questionnaireMode = 'institution_editor';
       $_SESSION['q_builder'] = ['name' => (string)$existingQuestionnaire['name'], 'source_template_id' => $existingQuestionnaire['source_template_id'] ?? null, 'status' => (string)$existingQuestionnaire['status'], 'enable_comments' => (int)($existingQuestionnaire['enable_comments'] ?? 0), 'estates' => $qEstates, 'questions' => $byEstate];
       $_SESSION['q_builder_context_institution_id'] = $selectedInstitutionId;
