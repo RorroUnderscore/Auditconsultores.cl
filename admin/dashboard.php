@@ -231,7 +231,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (is_array($draft)) {
         $_SESSION['qtpl_builder']['name'] = trim((string)($draft['name'] ?? ($_SESSION['qtpl_builder']['name'] ?? '')));
         $_SESSION['qtpl_builder']['estates'] = array_values(array_map('strval', $draft['estates'] ?? ($_SESSION['qtpl_builder']['estates'] ?? [])));
-        $_SESSION['qtpl_builder']['questions'] = is_array($draft['questions'] ?? null) ? $draft['questions'] : ($_SESSION['qtpl_builder']['questions'] ?? []);
+        if (is_array($draft['questions'] ?? null)) { foreach ($draft['questions'] as $e=>$rows) $_SESSION['qtpl_builder']['questions'][(string)$e] = is_array($rows) ? $rows : []; }
       }
       header('Content-Type: application/json'); echo json_encode(['ok'=>1]); exit;
     } elseif ($action === 'q_draft_sync') {
@@ -240,7 +240,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (is_array($draft)) {
         $_SESSION['q_builder']['name'] = trim((string)($draft['name'] ?? ($_SESSION['q_builder']['name'] ?? '')));
         $_SESSION['q_builder']['estates'] = array_values(array_map('strval', $draft['estates'] ?? ($_SESSION['q_builder']['estates'] ?? [])));
-        $_SESSION['q_builder']['questions'] = is_array($draft['questions'] ?? null) ? $draft['questions'] : ($_SESSION['q_builder']['questions'] ?? []);
+        if (is_array($draft['questions'] ?? null)) { foreach ($draft['questions'] as $e=>$rows) $_SESSION['q_builder']['questions'][(string)$e] = is_array($rows) ? $rows : []; }
       }
       header('Content-Type: application/json'); echo json_encode(['ok'=>1]); exit;
     } elseif ($action === 'qtpl_set_name') {
@@ -1083,7 +1083,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
 <script>
 (function(){
   const postDraft=(action,payload)=>{const fd=new FormData();fd.append('action',action);fd.append('institution_id','<?= (int)$selectedInstitutionId ?>');fd.append('tab','cuestionarios');fd.append('draft_json',JSON.stringify(payload));fetch('/admin/dashboard.php',{method:'POST',body:fd,credentials:'same-origin'}).catch(()=>{});};
-  let t1=null;document.querySelectorAll('[data-qtpl-name],[data-qtpl-qtext],[data-qtpl-qcat]').forEach(el=>el.addEventListener('input',()=>{clearTimeout(t1);t1=setTimeout(()=>{const name=(document.querySelector('[data-qtpl-name]')||{}).value||'';const estates=[...document.querySelectorAll("a.chip[href*='qmode=create_template&tpl_estate']")].map(a=>a.textContent.trim());const questions={};document.querySelectorAll("input[name='estate']").forEach((e,i)=>{const estate=e.value;const row=e.closest('form');if(!row)return;const qt=row.querySelector("input[name='question_text']");const qc=row.querySelector("input[name='question_category']");if(!questions[estate])questions[estate]=[];questions[estate].push({text:qt?qt.value:'',category:qc?qc.value:''});});postDraft('qtpl_draft_sync',{name,estates,questions});},350);}));
+  let t1=null;document.querySelectorAll('[data-qtpl-name],[data-qtpl-qtext],[data-qtpl-qcat]').forEach(el=>el.addEventListener('input',()=>{clearTimeout(t1);t1=setTimeout(()=>{const name=(document.querySelector('[data-qtpl-name]')||{}).value||'';const estates=[...document.querySelectorAll("a.chip[href*='qmode=create_template&tpl_estate']")].map(a=>a.textContent.trim());const questions={};document.querySelectorAll("form input[name='action'][value='qtpl_update_question']").forEach(a=>{const row=a.closest('form');if(!row)return;const estate=(row.querySelector("input[name='estate']")||{}).value||'';const qt=row.querySelector("input[name='question_text']");const qc=row.querySelector("input[name='question_category']");if(!questions[estate])questions[estate]=[];questions[estate].push({text:qt?qt.value:'',category:qc?qc.value:''});});postDraft('qtpl_draft_sync',{name,estates,questions});},350);}));
   let t2=null;document.querySelectorAll('[data-q-qtext],[data-q-qcat]').forEach(el=>el.addEventListener('input',()=>{clearTimeout(t2);t2=setTimeout(()=>{const estates=[...document.querySelectorAll("a.chip[href*='q_estate=']")].map(a=>a.textContent.trim());const questions={};document.querySelectorAll("form input[name='action'][value='q_update_question']").forEach(a=>{const f=a.closest('form');const estate=(f.querySelector("input[name='estate']")||{}).value||'';const qt=(f.querySelector("input[name='question_text']")||{}).value||'';const qc=(f.querySelector("input[name='question_category']")||{}).value||'';if(!questions[estate])questions[estate]=[];questions[estate].push({text:qt,category:qc});});postDraft('q_draft_sync',{estates,questions});},350);}));
 })();
 </script>
