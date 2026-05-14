@@ -32,6 +32,7 @@ if ($questionnaire) {
   }
 }
 $msg=''; $err='';
+$scaleLabels=[1=>'Muy en desacuerdo',2=>'En desacuerdo',3=>'Neutro',4=>'De acuerdo',5=>'Muy de acuerdo'];
 if ($_SERVER['REQUEST_METHOD']==='POST') {
   if (!empty($ctx['used_at'])) $err='Este token ya fue utilizado.';
   elseif (!$questionnaire) $err='No hay cuestionario publicado.';
@@ -48,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
       $pdo->prepare('UPDATE invitation_tokens SET used_at=? WHERE id=?')->execute([date('c'), (int)$ctx['token_id']]);
       $pdo->prepare('UPDATE participants SET responded_at=? WHERE id=?')->execute([date('c'), (int)$ctx['participant_id']]);
       $pdo->commit();
-      $msg='Gracias, tu respuesta fue registrada correctamente.';
+      $msg='Muchas gracias por su colaboración. Sus respuestas fueron registradas correctamente.';
       $ctx['used_at'] = date('c');
     }
   }
@@ -62,13 +63,13 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
 .toggle{border:1px solid var(--line);background:var(--card);color:var(--text);padding:8px 12px;border-radius:999px;cursor:pointer}
 .box{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:24px;box-shadow:0 8px 25px #0000000d}
 h1{margin:0 0 8px;font-size:32px}.muted{color:var(--muted)}.q{margin:14px 0;padding:14px;border:1px solid var(--line);border-radius:12px}
-.scale{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.scale label{display:inline-flex;align-items:center;gap:6px;padding:8px 10px;border:1px solid var(--line);border-radius:999px;cursor:pointer}
+.scale{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.scale label{display:inline-flex;align-items:center;gap:6px;padding:8px 10px;border:1px solid var(--line);border-radius:999px;cursor:pointer}.scale small{color:var(--muted);font-size:12px}
 textarea{width:100%;min-height:110px;padding:12px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--text)}
 button[type='submit']{margin-top:14px;background:linear-gradient(90deg,var(--brand),var(--brand2));color:#fff;border:none;padding:12px 18px;border-radius:12px;font-weight:700;cursor:pointer}
 .msg{padding:10px 12px;border-radius:10px;margin:12px 0}.ok{color:var(--ok);background:var(--okbg)}.err{color:var(--err);background:var(--errbg)}
-</style></head><body><div class='wrap'><div class='top'><small class='muted'>Plataforma de Diagnostico Institucional</small><button class='toggle' type='button' onclick='toggleTheme()'>Tema</button></div><div class='box'><h1><?= htmlspecialchars((string)$ctx['estate']) ?></h1><p class='muted'><?= htmlspecialchars((string)($questionnaire['name'] ?? 'Cuestionario')) ?> · <?= htmlspecialchars((string)$ctx['institution_name']) ?></p><p>Participante: <strong><?= htmlspecialchars((string)$ctx['participant_name'].' ('.$ctx['email'].')') ?></strong></p>
+</style></head><body><div class='wrap'><div class='top'><small class='muted'>Plataforma de Diagnostico Institucional</small><button class='toggle' type='button' onclick='toggleTheme()'>Tema</button></div><div class='box'><h1>Encuesta de Percepción</h1><p class='muted'><?= htmlspecialchars((string)($questionnaire['name'] ?? 'Cuestionario')) ?> - <?= htmlspecialchars((string)$ctx['institution_name']) ?></p><p>Participante: <strong><?= htmlspecialchars((string)$ctx['participant_name']) ?></strong></p>
 <?php if ($msg): ?><p class='msg ok'><?= htmlspecialchars($msg) ?></p><?php endif; ?>
 <?php if ($err): ?><p class='msg err'><?= htmlspecialchars($err) ?></p><?php endif; ?>
-<?php if (!empty($ctx['used_at'])): ?><p class='msg ok'>Esta encuesta ya fue respondida el <?= htmlspecialchars((string)$ctx['used_at']) ?>.</p>
+<?php if (!empty($ctx['used_at'])): ?><p class='msg ok'>Gracias por su participación. Esta encuesta ya fue respondida el <?= htmlspecialchars((string)$ctx['used_at']) ?>.</p>
 <?php elseif (!$questionnaire): ?><p class='err'>Encuesta no disponible.</p>
-<?php else: ?><form method='post'><?php foreach($questions as $q): ?><div class='q'><p><strong><?= (int)$q['q_order'] ?>.</strong> <?= htmlspecialchars((string)$q['question_text']) ?></p><div class='scale'><?php for($v=1;$v<=5;$v++): ?><label><input type='radio' name='q<?= (int)$q['id'] ?>' value='<?= $v ?>' required> <?= $v ?></label><?php endfor; ?></div></div><?php endforeach; ?><p class='muted'><small>1 Muy en desacuerdo - 2 En desacuerdo - 3 Neutro - 4 De acuerdo - 5 Muy de acuerdo</small></p><?php if(!empty($questionnaire['enable_comments'])): ?><div class='q'><label>Comentario opcional</label><textarea name='comment' rows='4' placeholder='Escribe aquí tu comentario (opcional)'></textarea></div><?php endif; ?><button type='submit'>Enviar respuestas</button></form><?php endif; ?></div></div><script>const key='survey_theme';const pref=localStorage.getItem(key);if(pref)document.documentElement.setAttribute('data-theme',pref);function toggleTheme(){const c=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',c);localStorage.setItem(key,c);}</script></body></html>
+<?php else: ?><form method='post'><?php foreach($questions as $q): ?><div class='q'><p><strong><?= (int)$q['q_order'] ?>.</strong> <?= htmlspecialchars((string)$q['question_text']) ?></p><div class='scale'><?php for($v=1;$v<=5;$v++): ?><label title='<?= htmlspecialchars($scaleLabels[$v]) ?>'><input type='radio' name='q<?= (int)$q['id'] ?>' value='<?= $v ?>' required> <strong><?= $v ?></strong> <small><?= htmlspecialchars($scaleLabels[$v]) ?></small></label><?php endfor; ?></div></div><?php endforeach; ?><?php if(!empty($questionnaire['enable_comments'])): ?><div class='q'><label>Comentario opcional</label><textarea name='comment' rows='4' placeholder='Escribe aquí tu comentario (opcional)'></textarea></div><?php endif; ?><button type='submit'>Enviar respuestas</button></form><?php endif; ?></div></div><script>const key='survey_theme';const pref=localStorage.getItem(key);if(pref)document.documentElement.setAttribute('data-theme',pref);function toggleTheme(){const c=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',c);localStorage.setItem(key,c);}</script></body></html>
