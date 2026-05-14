@@ -518,10 +518,10 @@ if ($selectedInstitutionId > 0) {
   $qst->execute([$selectedInstitutionId, $projectId]);
   $existingQuestionnaire = $qst->fetch(PDO::FETCH_ASSOC) ?: null;
   if ($existingQuestionnaire) {
-    $qq = $pdo->prepare('SELECT estate, question_text FROM questionnaire_questions WHERE questionnaire_id=? ORDER BY q_order ASC, id ASC');
+    $qq = $pdo->prepare('SELECT qq.estate, qq.question_text, qc.name AS category_name FROM questionnaire_questions qq LEFT JOIN question_categories qc ON qc.id=qq.category_id WHERE qq.questionnaire_id=? ORDER BY qq.q_order ASC, qq.id ASC');
     $qq->execute([(int)$existingQuestionnaire['id']]);
     $byEstate = []; $qEstates=[];
-    foreach ($qq->fetchAll(PDO::FETCH_ASSOC) as $row) { $e=(string)$row['estate']; if(!isset($byEstate[$e])){ $byEstate[$e]=[]; $qEstates[]=$e; } $byEstate[$e][] = (string)$row['question_text']; }
+    foreach ($qq->fetchAll(PDO::FETCH_ASSOC) as $row) { $e=(string)$row['estate']; if(!isset($byEstate[$e])){ $byEstate[$e]=[]; $qEstates[]=$e; } $byEstate[$e][] = ['text'=>(string)$row['question_text'],'category'=>(string)($row['category_name'] ?? '')]; }
     $hasAny = array_sum(array_map('count', $byEstate)) > 0;
     if ($tab === 'cuestionarios' && in_array($questionnaireMode, ['', 'institution_editor'], true) && $hasAny) {
       $questionnaireMode = 'institution_editor';
@@ -1162,7 +1162,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
   let t1=null;document.querySelectorAll('[data-qtpl-name],[data-qtpl-qtext],[data-qtpl-qcat]').forEach(el=>el.addEventListener('input',()=>{clearTimeout(t1);t1=setTimeout(()=>postDraft('qtpl_draft_sync',collectTpl()),200);}));
   let t2=null;document.querySelectorAll('[data-q-qtext],[data-q-qcat]').forEach(el=>el.addEventListener('input',()=>{clearTimeout(t2);t2=setTimeout(()=>postDraft('q_draft_sync',collectQ()),200);}));
   document.querySelectorAll("form input[name='qmode'][value='create_template']").forEach(h=>{const f=h.closest('form');if(!f)return;f.addEventListener('submit',async()=>{clearTimeout(t1);await postDraft('qtpl_draft_sync',collectTpl());});});
-  document.querySelectorAll("form input[name='qmode'][value='use_template'], form input[name='qmode'][value='scratch']").forEach(h=>{const f=h.closest('form');if(!f)return;f.addEventListener('submit',async()=>{clearTimeout(t2);await postDraft('q_draft_sync',collectQ());});});
+  document.querySelectorAll("form input[name='qmode'][value='use_template'], form input[name='qmode'][value='scratch']").forEach(h=>{const f=h.closest('form');if(!f)return;const a=((f.querySelector(\"input[name='action']\")||{}).value||'').trim();if(['q_delete_estate','q_delete_question','q_move_question','q_inherit_questions'].includes(a))return;f.addEventListener('submit',async()=>{clearTimeout(t2);await postDraft('q_draft_sync',collectQ());});});
 })();
 </script>
 <script>function insertToken(token){var el=document.getElementById('mail-body');if(!el)return;var start=el.selectionStart||0;var end=el.selectionEnd||0;var txt=el.value||'';el.value=txt.slice(0,start)+token+txt.slice(end);el.focus();el.selectionStart=el.selectionEnd=start+token.length;}</script></body></html>
