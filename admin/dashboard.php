@@ -774,6 +774,13 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
 .bar{height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden}.bar span{display:block;height:100%}
 .chart{border:1px solid #e5e7eb;border-radius:16px;padding:14px;background:#fff;margin-top:14px}
 .chart-row{display:grid;grid-template-columns:120px 1fr 70px;gap:12px;align-items:center;margin:10px 0}
+.report-shell{border:1px solid #dbe1ee;border-radius:16px;overflow:auto;max-height:560px;background:#fff}
+.report-hero{background:linear-gradient(180deg,#2f2b86,#161e57);color:#fff;padding:36px 20px;text-align:center}
+.report-badge{display:inline-block;background:#5b5ce6;color:#eef2ff;padding:5px 12px;border-radius:999px;font-size:13px;margin:4px}
+.report-section{padding:18px 22px;border-top:1px solid #eef2f6}
+.hbar{display:grid;grid-template-columns:220px 1fr 50px;gap:10px;align-items:center;margin:8px 0}
+.hbar-track{height:24px;background:#edf0ff;border-radius:8px;overflow:hidden}
+.hbar-fill{height:100%;background:linear-gradient(90deg,#6c6ee8,#6366f1)}
 </style></head><body>
 <div class='layout'><aside class='side'>
   <div class='logo'>SISTEMA DE DIAGNOSTICO</div>
@@ -1149,7 +1156,51 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
         <?php endif; ?>
       <?php endif; ?>
     </div></section>
-  <?php elseif($tab==='entregable'): ?><section class='card' style='margin-top:16px'><h3>Entregable</h3><div class='card-body'><div class='empty'>Módulo en construcción.</div></div></section>
+  <?php elseif($tab==='entregable'): ?>
+    <?php
+      $deliverableRows = [];
+      if ($selectedInstitutionId > 0) {
+        $sqlDel = "SELECT qq.estate, COALESCE(NULLIF(TRIM(qc.name),''),'Sin dimensión') dimension_name, qra.value, COUNT(*) qty
+                   FROM questionnaire_response_answers qra
+                   JOIN responses r ON r.id=qra.response_id
+                   JOIN questionnaire_questions qq ON qq.id=qra.questionnaire_question_id
+                   JOIN questionnaires q ON q.id=qq.questionnaire_id
+                   LEFT JOIN question_categories qc ON qc.id=qq.category_id
+                   WHERE q.institution_id=?
+                   GROUP BY qq.estate, COALESCE(NULLIF(TRIM(qc.name),''),'Sin dimensión'), qra.value
+                   ORDER BY qq.estate, dimension_name";
+        $sd = $pdo->prepare($sqlDel); $sd->execute([(int)$selectedInstitutionId]);
+        foreach($sd->fetchAll(PDO::FETCH_ASSOC) as $row){
+          $e=(string)$row['estate']; $d=(string)$row['dimension_name']; $v=(int)$row['value']; $qty=(int)$row['qty'];
+          if(!isset($deliverableRows[$e])) $deliverableRows[$e]=[];
+          if(!isset($deliverableRows[$e][$d])) $deliverableRows[$e][$d]=['sum'=>0,'total'=>0];
+          $deliverableRows[$e][$d]['sum'] += ($v*$qty); $deliverableRows[$e][$d]['total'] += $qty;
+        }
+      }
+    ?>
+    <div style='margin-top:16px;display:flex;gap:10px'><button class='btn' type='button'>⭳ Exportar PDF</button></div>
+    <section class='card' style='margin-top:14px'><h3>Vista Previa del Reporte</h3><div class='card-body'>
+      <?php if(empty($deliverableRows)): ?>
+        <div class='empty'>Aún no hay respuestas para generar la vista previa del reporte.</div>
+      <?php else: ?>
+        <div class='report-shell'>
+          <div class='report-hero'>
+            <div style='letter-spacing:2px;color:#9fb1ff'>INFORME INSTITUCIONAL CONFIDENCIAL</div>
+            <h2 style='margin:12px 0 8px;font-size:40px'>Estudio de Convivencia Escolar</h2>
+            <div style='color:#cdd7ff'><?= htmlspecialchars((string)($selectedInstitution['name'] ?? 'Institución')) ?></div>
+            <div style='margin-top:12px'><?php foreach(array_keys($deliverableRows) as $e): ?><span class='report-badge'><?= htmlspecialchars($e) ?></span><?php endforeach; ?></div>
+          </div>
+          <?php foreach($deliverableRows as $estateName=>$dimensions): $estateSum=0; $estateTotal=0; foreach($dimensions as $vals){$estateSum+=$vals['sum'];$estateTotal+=$vals['total'];} $estatePct=$estateTotal>0?(int)round((($estateSum/$estateTotal)/5)*100):0; ?>
+            <div class='report-section'>
+              <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><strong>Resultados - <?= htmlspecialchars($estateName) ?></strong><span class='chip'>Promedio: <?= $estatePct ?>%</span></div>
+              <?php foreach($dimensions as $dimensionName=>$vals): $avg=$vals['total']>0?($vals['sum']/$vals['total']):0; $pct=(int)round(($avg/5)*100); ?>
+                <div class='hbar'><div><?= htmlspecialchars($dimensionName) ?></div><div class='hbar-track'><div class='hbar-fill' style='width:<?= $pct ?>%'></div></div><div style='text-align:right'><?= $pct ?>%</div></div>
+              <?php endforeach; ?>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      <?php endif; ?>
+    </div></section>
   <?php elseif($tab==='benchmarking'): ?><section class='card' style='margin-top:16px'><h3>Benchmarking</h3><div class='card-body'><div class='empty'>Necesitas al menos 2 proyectos con cuestionarios cargados.</div></div></section>
   <?php endif; ?>
 <?php endif; ?>
