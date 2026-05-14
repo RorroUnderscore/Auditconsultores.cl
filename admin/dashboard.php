@@ -667,6 +667,12 @@ function exportResultsExcel(PDO $pdo, int $institutionId): void {
   $qSel->execute([$institutionId, $projectId]); $activeQ = $qSel->fetch(PDO::FETCH_ASSOC);
   $qid = (int)($activeQ['id'] ?? 0);
   $estates = getInstitutionEstates($pdo, $institutionId);
+  $estateStmt = $pdo->prepare("SELECT DISTINCT TRIM(estate) estate FROM questionnaire_questions WHERE questionnaire_id=? AND TRIM(estate)<>'' ORDER BY estate");
+  $estateStmt->execute([$qid]);
+  $questionEstates = array_map(fn($r)=>(string)$r['estate'], $estateStmt->fetchAll(PDO::FETCH_ASSOC));
+  $participantEstates = array_values(array_unique(array_map(fn($p)=>(string)($p['estate'] ?? ''), $participants)));
+  $estates = array_values(array_filter(array_unique(array_merge($estates, $questionEstates, $participantEstates)), fn($e)=>trim((string)$e)!==''));
+  if (empty($estates)) $estates = ['General'];
   $xml = '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
   $xml .= '<Styles><Style ss:ID="h"><Font ss:Bold="1"/><Interior ss:Color="#E8EEFF" ss:Pattern="Solid"/></Style><Style ss:ID="th"><Font ss:Bold="1"/><Interior ss:Color="#F3F4F6" ss:Pattern="Solid"/></Style></Styles>';
   $xml .= '<Worksheet ss:Name="Resumen"><Table>';
@@ -677,7 +683,7 @@ function exportResultsExcel(PDO $pdo, int $institutionId): void {
     if ($qid === 0) { $xml .= '<Row>'.xmlCell('Sin cuestionario activo').'</Row></Table></Worksheet>'; continue; }
     $questions = $pdo->prepare("SELECT qq.id, qq.question_text, qc.name category_name FROM questionnaire_questions qq LEFT JOIN question_categories qc ON qc.id=qq.category_id WHERE qq.questionnaire_id=? AND qq.estate=? ORDER BY qq.q_order, qq.id");
     $questions->execute([$qid, $estate]); $qRows = $questions->fetchAll(PDO::FETCH_ASSOC);
-    foreach($qRows as $idx=>$q){ $xml .= '<Row><Cell ss:StyleID="h"><Data ss:Type="String">Pregunta '.($idx+1).'</Data></Cell>'.xmlCell((string)$q['question_text']).xmlCell('Categoría: '.(string)($q['category_name'] ?? 'Sin categoría')).'</Row><Row><Cell ss:StyleID="th"><Data ss:Type="String">Participante</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Correo</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Respuesta</Data></Cell></Row>';
+    foreach($qRows as $idx=>$q){ $xml .= '<Row><Cell ss:StyleID="h"><Data ss:Type="String">Pregunta '.($idx+1).'</Data></Cell>'.xmlCell((string)$q['question_text']).xmlCell('Dimensión: '.(string)($q['category_name'] ?? 'Sin dimensión')).'</Row><Row><Cell ss:StyleID="th"><Data ss:Type="String">Participante</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Correo</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Respuesta</Data></Cell></Row>';
       $ans = $pdo->prepare("SELECT p.name,p.last_name,p.email,qra.value FROM questionnaire_response_answers qra JOIN responses r ON r.id=qra.response_id JOIN invitation_tokens t ON t.id=r.token_id JOIN participants p ON p.id=t.participant_id WHERE r.questionnaire_id=? AND qra.questionnaire_question_id=? ORDER BY p.last_name,p.name");
       $ans->execute([$qid,(int)$q['id']]); $counts=[1=>0,2=>0,3=>0,4=>0,5=>0];
       foreach($ans->fetchAll(PDO::FETCH_ASSOC) as $a){ $v=(int)$a['value']; if(isset($counts[$v]))$counts[$v]++; $xml.='<Row>'.xmlCell(trim(($a['name']??'').' '.($a['last_name']??''))).xmlCell((string)$a['email']).xmlCell((string)$v).'</Row>'; }
@@ -687,6 +693,40 @@ function exportResultsExcel(PDO $pdo, int $institutionId): void {
     $comments->execute([$qid,$estate]); $cRows=$comments->fetchAll(PDO::FETCH_COLUMN);
     if ($cRows){ $xml .= '<Row><Cell ss:StyleID="h"><Data ss:Type="String">Comentarios</Data></Cell></Row>'; foreach($cRows as $c){ $xml .= '<Row>'.xmlCell((string)$c).'</Row>'; } }
     $xml .= '</Table></Worksheet>'; }
+  $xml .= '<Worksheet ss:Name="Dimensiones"><Table>';
+  $xml .= '<Row><Cell ss:StyleID="th"><Data ss:Type="String">Dimensión</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Estamento</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Puntaje % (0-100)</Data></Cell></Row>';
+  if ($qid > 0) {
+    $dimStmt = $pdo->prepare("SELECT COALESCE(NULLIF(TRIM(qc.name),''),'Sin dimensión') dimension_name, qq.estate, qra.value, COUNT(*) qty
+      FROM questionnaire_response_answers qra
+      JOIN responses r ON r.id=qra.response_id
+      JOIN questionnaire_questions qq ON qq.id=qra.questionnaire_question_id
+      LEFT JOIN question_categories qc ON qc.id=qq.category_id
+      WHERE r.questionnaire_id=?
+      GROUP BY COALESCE(NULLIF(TRIM(qc.name),''),'Sin dimensión'), qq.estate, qra.value
+      ORDER BY dimension_name, qq.estate, qra.value");
+    $dimStmt->execute([$qid]);
+    $dimAgg = [];
+    foreach($dimStmt->fetchAll(PDO::FETCH_ASSOC) as $row){
+      $d=(string)$row['dimension_name']; $e=(string)$row['estate']; $v=(int)$row['value']; $qty=(int)$row['qty'];
+      if(!isset($dimAgg[$d])) $dimAgg[$d]=[];
+      if(!isset($dimAgg[$d][$e])) $dimAgg[$d][$e]=['sum'=>0,'total'=>0];
+      $dimAgg[$d][$e]['sum'] += ($v*$qty);
+      $dimAgg[$d][$e]['total'] += $qty;
+    }
+    if (!$dimAgg) { $xml .= '<Row>'.xmlCell('Sin datos disponibles').'</Row>'; }
+    else {
+      foreach($dimAgg as $dim=>$estateRows){
+        $xml .= '<Row><Cell ss:StyleID="h"><Data ss:Type="String">'.htmlspecialchars($dim, ENT_XML1).'</Data></Cell></Row>';
+        foreach($estateRows as $estate=>$vals){
+          $avg = $vals['total']>0 ? ($vals['sum']/$vals['total']) : 0;
+          $pct = $vals['total']>0 ? round(($avg/5)*100,1) : 0;
+          $xml .= '<Row>'.xmlCell('').xmlCell($estate).xmlCell((string)$pct).'</Row>';
+        }
+        $xml .= '<Row></Row>';
+      }
+    }
+  } else { $xml .= '<Row>'.xmlCell('Sin cuestionario activo').'</Row>'; }
+  $xml .= '</Table></Worksheet>';
   $xml .= '<Worksheet ss:Name="Participantes"><Table><Row><Cell ss:StyleID="th"><Data ss:Type="String">Estamento</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Nombre</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Apellido</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Mail</Data></Cell><Cell ss:StyleID="th"><Data ss:Type="String">Estado cuestionario</Data></Cell></Row>';
   foreach($participants as $p){ $status=(!empty($p['responded_at']) || (int)$p['has_used_token']===1)?'Contestado':'No contestado'; $xml.='<Row>'.xmlCell((string)$p['estate']).xmlCell((string)$p['name']).xmlCell((string)($p['last_name']??'')).xmlCell((string)$p['email']).xmlCell($status).'</Row>'; }
   $xml .= '</Table></Worksheet></Workbook>';
