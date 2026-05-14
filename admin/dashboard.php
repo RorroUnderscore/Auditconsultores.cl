@@ -514,7 +514,7 @@ if (!empty($contacts)) {
 $existingQuestionnaire = null;
 if ($selectedInstitutionId > 0) {
   $projectId = resolveProjectId($pdo, $selectedInstitutionId);
-  $qst = $pdo->prepare('SELECT q.*, (SELECT COUNT(*) FROM questionnaire_questions qq WHERE qq.questionnaire_id=q.id) AS q_count FROM questionnaires q WHERE q.institution_id=? AND q.project_id=? ORDER BY q_count DESC, q.id DESC LIMIT 1');
+  $qst = $pdo->prepare('SELECT q.*, (SELECT COUNT(*) FROM questionnaire_questions qq WHERE qq.questionnaire_id=q.id) AS q_count FROM questionnaires q WHERE q.institution_id=? AND q.project_id=? ORDER BY q.id DESC LIMIT 1');
   $qst->execute([$selectedInstitutionId, $projectId]);
   $existingQuestionnaire = $qst->fetch(PDO::FETCH_ASSOC) ?: null;
   if ($existingQuestionnaire) {
